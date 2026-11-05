@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.ai import router as ai_router
 from app.api.messaging import router as messaging_router
 from app.db import initialize_database
 from app.settings import settings
