@@ -1,6 +1,6 @@
 /** Username/email sign-in, profile registration, and six-digit email verification screens. */
 
-import React, { FormEvent, KeyboardEvent, useRef } from 'react';
+import React, { FormEvent, KeyboardEvent, useRef, useState } from 'react';
 import { Brand } from '../Brand';
 import { Icon } from '../Icon';
 import type { Theme } from '../../types';
@@ -36,6 +36,37 @@ type AuthScreenProps = {
 };
 
 export function AuthScreen({ mode, onModeChange, identifier, onIdentifierChange, email, onEmailChange, username, onUsernameChange, firstName, onFirstNameChange, lastName, onLastNameChange, gender, onGenderChange, password, onPasswordChange, onSubmit, onVerifyNow, onDismissVerify, verifyPromptOpen, verificationEmailHint, onToggleTheme, onNotify, theme, error, submitting }: AuthScreenProps) {
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [attempted, setAttempted] = useState(false);
+  const errors: Record<string, string> = {};
+  if (mode === 'login') {
+    const loginId = identifier.trim().replace(/^@/, '');
+    if (!loginId) errors.identifier = 'Enter your username or email.';
+    else if (!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginId) || /^[a-z0-9_]{3,24}$/i.test(loginId))) errors.identifier = 'Enter a valid username or email.';
+  } else {
+    if (!firstName.trim()) errors.firstName = 'Enter your first name.';
+    if (!lastName.trim()) errors.lastName = 'Enter your last name.';
+    if (!/^[a-z0-9_]{3,24}$/.test(username)) errors.username = 'Use 3–24 letters, numbers, or underscores.';
+    if (!email.trim()) errors.email = 'Enter your email address.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = 'Enter a valid email address.';
+    if (!gender) errors.gender = 'Choose an option, including “Rather not say”.';
+  }
+  if (password.length < 8) errors.password = 'Use at least 8 characters.';
+  function showError(field: string) { return (attempted || touched[field]) ? errors[field] : undefined; }
+  function markTouched(field: string) { setTouched((current) => ({ ...current, [field]: true })); }
+  function submitWithValidation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAttempted(true);
+    if (Object.keys(errors).length === 0) onSubmit(event);
+  }
+  function fieldProps(field: string) {
+    const message = showError(field);
+    return { className: message ? 'field-invalid' : undefined, 'aria-invalid': Boolean(message), onBlur: () => markTouched(field) };
+  }
+  function fieldError(field: string) {
+    const message = showError(field);
+    return message ? <small className="field-error" role="alert">{message}</small> : null;
+  }
   return <div className="auth-shell">
     <aside className="auth-story">
       <div className="auth-story-top"><Brand /><button className="theme-button story-theme" onClick={onToggleTheme} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}><Icon name={theme === 'light' ? 'moon' : 'sun'} /></button></div>
@@ -49,24 +80,24 @@ export function AuthScreen({ mode, onModeChange, identifier, onIdentifierChange,
     </aside>
     <main className="auth-panel">
       <div className="auth-panel-mobile-brand"><Brand /><button className="theme-button" onClick={onToggleTheme} aria-label="Toggle theme"><Icon name={theme === 'light' ? 'moon' : 'sun'} /></button></div>
-      <section className="auth-card">
+      <section className="auth-card" key={mode}>
         <div className="auth-card-head"><span className="auth-overline">{mode === 'login' ? 'WELCOME BACK' : 'GET STARTED'}</span><h2>{mode === 'login' ? 'Sign in to TeamFlow' : 'Create your account'}</h2><p>{mode === 'login' ? 'Your team is right where you left it.' : 'A better workday starts with a conversation.'}</p></div>
-        <form className="auth-form" onSubmit={onSubmit}>
+        <form className="auth-form" noValidate onSubmit={submitWithValidation}>
           {mode === 'register' ? <>
             <div className="name-fields">
-              <label className="field"><span>First name</span><input value={firstName} onChange={(event) => onFirstNameChange(event.target.value)} placeholder="First name" autoComplete="given-name" required /></label>
-              <label className="field"><span>Last name</span><input value={lastName} onChange={(event) => onLastNameChange(event.target.value)} placeholder="Last name" autoComplete="family-name" required /></label>
+              <label className="field"><span>First name</span><input {...fieldProps('firstName')} value={firstName} onChange={(event) => onFirstNameChange(event.target.value)} placeholder="First name" autoComplete="given-name" required />{fieldError('firstName')}</label>
+              <label className="field"><span>Last name</span><input {...fieldProps('lastName')} value={lastName} onChange={(event) => onLastNameChange(event.target.value)} placeholder="Last name" autoComplete="family-name" required />{fieldError('lastName')}</label>
             </div>
-            <label className="field"><span>Username</span><span className="username-input"><b>@</b><input value={username} onChange={(event) => onUsernameChange(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" autoComplete="username" minLength={3} maxLength={24} required /></span><small>3–24 characters · letters, numbers, and underscores</small></label>
-            <label className="field"><span>Work email</span><input type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} placeholder="you@company.com" autoComplete="email" required /></label>
-            <label className="field"><span>Gender</span><select value={gender} onChange={(event) => onGenderChange(event.target.value)} required><option value="" disabled>Select an option</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="other">Other</option><option value="prefer_not_to_say">Rather not say</option></select></label>
-          </> : <label className="field"><span>Username or email</span><input type="text" value={identifier} onChange={(event) => onIdentifierChange(event.target.value)} placeholder="@username or you@company.com" autoComplete="username" required /></label>}
-          <label className="field"><span>Password</span><input type="password" value={password} onChange={(event) => onPasswordChange(event.target.value)} placeholder="At least 8 characters" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} required /></label>
+            <label className="field"><span>Username</span><span className={`username-input${showError('username') ? ' field-invalid' : ''}`}><b>@</b><input {...fieldProps('username')} value={username} onChange={(event) => onUsernameChange(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" autoComplete="username" minLength={3} maxLength={24} required /></span>{fieldError('username') || <small>3–24 characters · letters, numbers, and underscores</small>}</label>
+            <label className="field"><span>Work email</span><input {...fieldProps('email')} type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} placeholder="you@company.com" autoComplete="email" required />{fieldError('email')}</label>
+            <label className="field"><span>Gender</span><select {...fieldProps('gender')} value={gender} onChange={(event) => onGenderChange(event.target.value)} required><option value="" disabled>Select an option</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="other">Other</option><option value="prefer_not_to_say">Rather not say</option></select>{fieldError('gender')}</label>
+          </> : <label className="field"><span>Username or email</span><input {...fieldProps('identifier')} type="text" value={identifier} onChange={(event) => onIdentifierChange(event.target.value)} placeholder="@username or you@company.com" autoComplete="username" required />{fieldError('identifier')}</label>}
+          <label className="field"><span>Password</span><input {...fieldProps('password')} type="password" value={password} onChange={(event) => onPasswordChange(event.target.value)} placeholder="At least 8 characters" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} required />{fieldError('password')}</label>
           {mode === 'login' && <div className="form-meta"><label className="remember-check"><input type="checkbox" defaultChecked /><span className="fake-checkbox"><Icon name="check" size={11} /></span>Remember me</label><button type="button" className="text-button" onClick={() => onNotify('Ask your workspace admin to reset your password.')}>Forgot password?</button></div>}
           {error && <p className="auth-error" role="alert">{error}</p>}
           <button className="primary-button auth-submit" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}<Icon name="arrow" size={16} /></button>
         </form>
-        <div className="auth-switch">{mode === 'login' ? 'New user?' : 'Already have an account?'} <button className="text-button" onClick={() => onModeChange(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Register now' : 'Sign in'}</button></div>
+        <div className="auth-switch">{mode === 'login' ? 'New user?' : 'Already have an account?'} <button className="text-button" onClick={() => { setTouched({}); setAttempted(false); onModeChange(mode === 'login' ? 'register' : 'login'); }}>{mode === 'login' ? 'Register now' : 'Sign in'}</button></div>
         <p className="privacy-note">By continuing, you agree to your organization’s communication policies.</p>
       </section>
       <div className="auth-panel-footer"><span>Need a hand?</span><button className="text-button" onClick={() => onNotify('Contact your workspace administrator for help.')}>Contact your workspace admin</button><span className="secure-note"><span className="secure-dot" /> Secure workspace</span></div>

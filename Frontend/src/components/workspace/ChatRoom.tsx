@@ -16,11 +16,12 @@ type Props = {
   onToggleDetails: () => void;
   onToast: (message: string) => void;
   onBackToList: () => void;
+  onShowCalls: () => void;
   typingName?: string;
   onTyping: (typing: boolean) => void;
 };
 
-export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftChange, onSend, onCall, onToggleDetails, onToast, onBackToList, typingName, onTyping }: Props) {
+export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftChange, onSend, onCall, onToggleDetails, onToast, onBackToList, onShowCalls, typingName, onTyping }: Props) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -41,14 +42,13 @@ export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftCh
   return <main className="chat-main">
     <header className="chat-header">
       <div className="chat-heading"><button className="mobile-back icon-button" aria-label="Back to conversations" onClick={onBackToList}><Icon name="back" size={19} /></button><Avatar initials={conversation.initials} color={conversation.color} online={conversation.online} /><div><h2>{conversation.name}</h2><span>{conversation.online ? <><i className="tiny-presence" /> Online now</> : conversation.lastSeenAt ? `Last seen ${formatLastSeen(conversation.lastSeenAt)}` : 'Offline'}</span></div></div>
-      <div className="chat-actions"><button className="icon-button header-action" aria-label="Start voice call" onClick={() => onCall('audio')}><Icon name="phone" /></button><button className="icon-button header-action" aria-label="Start video call" onClick={() => onCall('video')}><Icon name="video" /></button><span className="action-divider" /><button className={`icon-button header-action ${detailsOpen ? 'action-active' : ''}`} aria-label="Conversation details" onClick={onToggleDetails}><Icon name="info" /></button></div>
+      <div className="chat-actions"><button className="icon-button header-action mobile-call-history" aria-label="Call history" onClick={onShowCalls}><Icon name="phoneIncoming" /></button><button className="icon-button header-action" aria-label="Start voice call" onClick={() => onCall('audio')}><Icon name="phone" /></button><button className="icon-button header-action" aria-label="Start video call" onClick={() => onCall('video')}><Icon name="video" /></button><span className="action-divider" /><button className={`icon-button header-action ${detailsOpen ? 'action-active' : ''}`} aria-label="Conversation details" onClick={onToggleDetails}><Icon name="info" /></button></div>
     </header>
     <div className="chat-body">
       {messages.map((message, index) => <MessageRow key={message.id} message={message} previous={messages[index - 1]} />)}
       {typingName && <div className="typing-indicator"><span className="typing-dots"><i /><i /><i /></span><span>{typingName} is typing</span></div>}
     </div>
     <form className="composer" onSubmit={send}>
-      <div className="composer-topline"><span className="composer-context"><Icon name="chat" size={14} /> Message {conversation.group ? 'the team' : conversation.name.split(' ')[0]}</span><span className="composer-shortcut"><kbd>↵</kbd> to send · <kbd>⇧ ↵</kbd> for new line</span></div>
       <div className="composer-input-row"><textarea ref={composerRef} value={draft} onChange={(event) => { onDraftChange(event.target.value); onTyping(Boolean(event.target.value.trim())); event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onKeyDown} placeholder="Write a message…" rows={1} aria-label="Write a message" /><div className="composer-tools"><button type="button" className="icon-button composer-tool" aria-label="Attach a file" onClick={() => onToast('File sharing will be available soon.')}><Icon name="paperclip" size={18} /></button><button type="button" className="icon-button composer-tool" aria-label="Add emoji" onClick={() => onDraftChange(`${draft} ✨`)}><Icon name="smile" size={18} /></button><button type="button" className="icon-button composer-tool" aria-label="Voice message" onClick={() => onToast('Voice messages are coming soon.')}><Icon name="mic" size={18} /></button><button type="submit" className={`send-button ${draft.trim() ? 'send-ready' : ''}`} aria-label="Send message"><Icon name="send" size={17} /></button></div></div>
     </form>
   </main>;

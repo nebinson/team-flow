@@ -242,10 +242,10 @@ export function useWebRtcCall({ accessToken, findConversation, sendSignal, onToa
       });
       timeoutRef.current = window.setTimeout(() => {
         if (callRef.current?.id === callId && callRef.current.status === 'incoming') {
-          signal(callRef.current, 'call_reject');
+          signal(callRef.current, 'call_missed');
           closePeer();
         }
-      }, 45000);
+      }, 38000);
       return;
     }
 
