@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { authApi } from './api/auth';
-import { ApiRequestError } from './api/http';
+import { ApiRequestError, clearRefreshToken, getRefreshToken, setRefreshToken } from './api/http';
 import { conversationFromApi, messageFromApi, messagingApi, type ApiMessage } from './api/messaging';
 import { callsApi, type ApiCallLog, type CallSignal } from './api/calls';
 import { AuthScreen, VerificationScreen } from './components/auth/AuthScreens';
@@ -101,6 +101,30 @@ export default function App() {
   });
   callSignalHandlerRef.current = callController.handleSignal;
 
+  useEffect(() => {
+    function onTokenRefreshed(event: Event) {
+      const refreshed = (event as CustomEvent<{ accessToken?: string }>).detail?.accessToken;
+      if (refreshed) setAccessToken(refreshed);
+    }
+    function onSessionExpired() {
+      callController.hangUp();
+      clearRefreshToken();
+      setAccessToken('');
+      setCurrentUserId('');
+      setConversations([]);
+      setMessagesByConversation({});
+      setActiveId('');
+      setScreen('login');
+      setAuthError('Your session expired. Please sign in again.');
+    }
+    window.addEventListener('teamflow:token-refreshed', onTokenRefreshed);
+    window.addEventListener('teamflow:auth-expired', onSessionExpired);
+    return () => {
+      window.removeEventListener('teamflow:token-refreshed', onTokenRefreshed);
+      window.removeEventListener('teamflow:auth-expired', onSessionExpired);
+    };
+  }, []);
+
 function playNotificationSound() {
   try {
     const AudioContextClass = window.AudioContext;
@@ -125,6 +149,7 @@ function playNotificationSound() {
 }
   async function signInAndEnter(loginIdentifier = identifier) {
     const result = await authApi.login(loginIdentifier, password);
+    setRefreshToken(result.refresh_token);
     setAccessToken(result.access_token);
     const profile = await authApi.currentUser(result.access_token);
     setDisplayName(profile.name);
@@ -369,5 +394,5 @@ function playNotificationSound() {
     </>;
   }
 
-  return <Workspace theme={theme} currentUserName={displayName} accessToken={accessToken} onCreateConversation={createConversation} onToggleTheme={toggleTheme} onSignOut={() => { callController.hangUp(); setAccessToken(''); setCurrentUserId(''); setConversations([]); setMessagesByConversation({}); setCallLogs([]); setActiveId(''); setScreen('login'); }} onToast={notify} conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={(id) => { setActiveId(id); setConversations((current) => current.map((item) => item.id === id ? { ...item, unread: 0 } : item)); }} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onTyping={(typing) => updateTyping(typing)} typingName={typingByConversation[activeId]} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} call={callController.call} onCall={(conversationId, kind) => void callController.startCall(conversationId, kind)} onAcceptCall={() => void callController.acceptCall()} onRejectCall={callController.rejectCall} onHangUp={callController.hangUp} onToggleMute={callController.toggleMute} onToggleCamera={callController.toggleCamera} toast={toast} callLogs={callLogs} callLogsLoading={callLogsLoading} onLoadCallLogs={() => void loadCallLogs()} />;
+  return <Workspace theme={theme} currentUserName={displayName} accessToken={accessToken} onCreateConversation={createConversation} onToggleTheme={toggleTheme} onSignOut={() => { callController.hangUp(); const refreshToken = getRefreshToken(); if (refreshToken) void authApi.logout(refreshToken).catch(() => undefined); clearRefreshToken(); setAccessToken(''); setCurrentUserId(''); setConversations([]); setMessagesByConversation({}); setCallLogs([]); setActiveId(''); setScreen('login'); }} onToast={notify} conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={(id) => { setActiveId(id); setConversations((current) => current.map((item) => item.id === id ? { ...item, unread: 0 } : item)); }} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onTyping={(typing) => updateTyping(typing)} typingName={typingByConversation[activeId]} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} call={callController.call} onCall={(conversationId, kind) => void callController.startCall(conversationId, kind)} onAcceptCall={() => void callController.acceptCall()} onRejectCall={callController.rejectCall} onHangUp={callController.hangUp} onToggleMute={callController.toggleMute} onToggleCamera={callController.toggleCamera} toast={toast} callLogs={callLogs} callLogsLoading={callLogsLoading} onLoadCallLogs={() => void loadCallLogs()} />;
 }

@@ -38,6 +38,7 @@ class MessageDocument(TypedDict):
     body: str
     message_type: str
     created_at: datetime
+    sentiment: NotRequired[str]
 
 
 class CallLogDocument(TypedDict):
@@ -61,3 +62,11 @@ class EmailVerificationDocument(TypedDict):
     created_at: datetime
     last_sent_at: datetime
     attempt_count: int
+
+
+class RefreshTokenDocument(TypedDict):
+    _id: NotRequired[ObjectId]
+    token_hash: str
+    user_id: ObjectId
+    created_at: datetime
+    expires_at: datetime

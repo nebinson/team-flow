@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 30
+    refresh_token_days: int = 30
     email_verification_code_minutes: int = 10
     verification_resend_cooldown_seconds: int = 60
     resend_api_key: str = ""
@@ -21,6 +22,8 @@ class Settings(BaseSettings):
     nim_api_key: str = ""
     nim_base_url: str = "https://integrate.api.nvidia.com/v1"
     nim_model: str = ""
+    ai_request_timeout_seconds: int = 25
+    sentiment_model_path: str = ""
     gemini_api_key: str = ""
     gemini_model: str = ""
     ollama_base_url: str = "http://localhost:11434/v1"

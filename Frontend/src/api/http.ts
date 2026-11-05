@@ -9,15 +9,67 @@ export class ApiRequestError extends Error {
   }
 }
 
-export async function apiRequest<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
-  const bodyIsPresent = init.body !== undefined;
+let refreshTokenValue = '';
+let refreshInFlight: Promise<string | null> | null = null;
+
+export function setRefreshToken(token: string) {
+  refreshTokenValue = token;
+}
+
+export function getRefreshToken() {
+  return refreshTokenValue;
+}
+
+export function clearRefreshToken() {
+  refreshTokenValue = '';
+}
+
+async function renewAccessToken(): Promise<string | null> {
+  if (!refreshTokenValue) return null;
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshTokenValue }),
+      });
+    } catch {
+      return null;
+    }
+    if (response.status === 401 || response.status === 400) {
+      clearRefreshToken();
+      window.dispatchEvent(new Event('teamflow:auth-expired'));
+      return null;
+    }
+    if (!response.ok) return null;
+    const session = await response.json() as { access_token?: string; refresh_token?: string };
+    if (!session.access_token || !session.refresh_token) return null;
+    refreshTokenValue = session.refresh_token;
+    window.dispatchEvent(new CustomEvent('teamflow:token-refreshed', { detail: { accessToken: session.access_token } }));
+    return session.access_token;
+  })();
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
+async function sendRequest(path: string, init: RequestInit, token?: string): Promise<Response> {
   const headers = new Headers(init.headers);
-  if (bodyIsPresent && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (init.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers,
-  });
+  return fetch(`${apiBaseUrl}${path}`, { ...init, headers });
+}
+
+export async function apiRequest<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
+  let response = await sendRequest(path, init, token);
+  if (response.status === 401 && token && !path.startsWith('/api/v1/auth/')) {
+    const renewedToken = await renewAccessToken();
+    if (renewedToken) response = await sendRequest(path, init, renewedToken);
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {

@@ -17,6 +17,8 @@ export type AccessToken = {
   access_token: string;
   token_type: 'bearer';
   expires_in: number;
+  refresh_token: string;
+  refresh_expires_in: number;
 };
 
 export const authApi = {
@@ -28,6 +30,8 @@ export const authApi = {
     apiRequest<{ message: string }>('/api/v1/auth/verify-email', { method: 'POST', body: JSON.stringify({ identifier, code }) }),
   login: (identifier: string, password: string) =>
     apiRequest<AccessToken>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ identifier, password }) }),
+  logout: (refreshToken: string) =>
+    apiRequest<void>('/api/v1/auth/logout', { method: 'POST', body: JSON.stringify({ refresh_token: refreshToken }) }),
   currentUser: (token: string) =>
     apiRequest<UserProfile>('/api/v1/auth/me', {}, token),
 };

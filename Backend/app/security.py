@@ -35,6 +35,16 @@ def create_access_token(user_id: str) -> str:
     )
 
 
+def create_refresh_token() -> str:
+    """Create a high-entropy opaque token; only its digest is stored in MongoDB."""
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    """Return a SHA-256 digest suitable for token lookup and revocation."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def decode_access_token(token: str) -> str | None:
     """Return the subject for a valid configured JWT, else None."""
     try:

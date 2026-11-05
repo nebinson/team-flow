@@ -30,6 +30,12 @@ def initialize_database() -> tuple[MongoClient | None, Database | None]:
         database.email_verifications.create_index(
             [("user_id", ASCENDING)], unique=True, name="email_verifications_user_unique"
         )
+        database.refresh_tokens.create_index(
+            [("token_hash", ASCENDING)], unique=True, name="refresh_tokens_hash_unique"
+        )
+        database.refresh_tokens.create_index(
+            [("expires_at", ASCENDING)], expireAfterSeconds=0, name="refresh_tokens_expiry"
+        )
         database.conversations.create_index(
             [("direct_key", ASCENDING)],
             unique=True,

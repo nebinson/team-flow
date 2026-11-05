@@ -5,6 +5,7 @@ codes are scoped to an email address, expire, and allow at most five attempts.
 """
 
 import hmac
+from datetime import timedelta
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,15 +22,18 @@ from app.schemas.auth import (
     AuthMessage,
     IdentifierRequest,
     LoginRequest,
+    RefreshSessionRequest,
     RegisterRequest,
     UserResponse,
     VerifyEmailRequest,
 )
 from app.security import (
     create_access_token,
+    create_refresh_token,
     decode_access_token,
     hash_email_verification_code,
     hash_password,
+    hash_refresh_token,
     verify_password,
 )
 from app.services.email_verification import (
@@ -87,6 +91,24 @@ def _send_verification(database: Database, user: dict) -> None:
     except EmailDeliveryError:
         # Keep the response indistinguishable for existing and unknown email addresses.
         return
+
+
+def _issue_session(user_id: ObjectId, database: Database) -> AccessTokenResponse:
+    now = utc_now()
+    refresh_expires_at = now + timedelta(days=max(1, settings.refresh_token_days))
+    refresh_token = create_refresh_token()
+    database.refresh_tokens.insert_one({
+        "token_hash": hash_refresh_token(refresh_token),
+        "user_id": user_id,
+        "created_at": now,
+        "expires_at": refresh_expires_at,
+    })
+    return AccessTokenResponse(
+        access_token=create_access_token(str(user_id)),
+        expires_in=settings.access_token_minutes * 60,
+        refresh_token=refresh_token,
+        refresh_expires_in=max(1, settings.refresh_token_days) * 86400,
+    )
 
 
 @router.post(
@@ -248,11 +270,45 @@ def login(
             },
         )
 
-    token = create_access_token(str(user["_id"]))
-    return AccessTokenResponse(
-        access_token=token,
-        expires_in=settings.access_token_minutes * 60,
-    )
+    return _issue_session(user["_id"], database)
+
+
+@router.post("/refresh", response_model=AccessTokenResponse)
+def refresh_session(
+    payload: RefreshSessionRequest,
+    database: Database = Depends(get_database),
+) -> AccessTokenResponse:
+    """Rotate a single-use refresh token and issue a fresh access token."""
+    _require_auth_configuration()
+    now = utc_now()
+    stored = database.refresh_tokens.find_one_and_delete({
+        "token_hash": hash_refresh_token(payload.refresh_token),
+        "expires_at": {"$gt": now},
+    })
+    if stored is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh session expired. Please sign in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = database.users.find_one({"_id": stored["user_id"], "email_verified": True})
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh session is no longer valid. Please sign in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return _issue_session(user["_id"], database)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    payload: RefreshSessionRequest,
+    database: Database = Depends(get_database),
+) -> None:
+    """Revoke the current refresh session; expired or reused tokens are harmless."""
+    database.refresh_tokens.delete_one({"token_hash": hash_refresh_token(payload.refresh_token)})
+    return None
 
 
 def get_current_user(
