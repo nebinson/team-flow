@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import re
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
@@ -31,6 +32,7 @@ from app.security import decode_access_token
 from app.settings import settings
 
 router = APIRouter(tags=["messaging"])
+logger = logging.getLogger(__name__)
 _CALL_SIGNAL_TYPES = {"call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy", "call_missed"}
 
 
@@ -62,7 +64,14 @@ def get_call_ice_servers(user: dict = Depends(get_current_user)) -> dict:
     try:
         with urlopen(request, timeout=8) as response:
             payload = json.loads(response.read())
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except HTTPError as exc:
+        logger.warning("Cloudflare TURN credential generation rejected the request (HTTP %s).", exc.code)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cloudflare rejected the configured TURN key (HTTP {exc.code}). Check that the key UID and key secret belong together.",
+        ) from exc
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.warning("Could not complete the Cloudflare TURN credential request (%s).", type(exc).__name__)
         raise HTTPException(status_code=502, detail="Could not obtain call network credentials.") from exc
     ice_servers = payload.get("iceServers")
     if not isinstance(ice_servers, list) or not ice_servers:
