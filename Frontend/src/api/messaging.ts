@@ -95,7 +95,9 @@ export const messagingApi = {
   createDirectConversation: (token: string, username: string) =>
     apiRequest<ApiConversation>('/api/v1/conversations/direct', { method: 'POST', body: JSON.stringify({ username }) }, token),
   connectWorkspace(token: string, onEvent: (event: Record<string, unknown>) => void) {
-    const base = new URL(apiBaseUrl);
+    // A relative API base (for example VITE_API_URL=/ behind an Nginx proxy)
+    // means the REST API and WebSocket share the page's origin.
+    const base = new URL(apiBaseUrl || window.location.origin, window.location.origin);
     const protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${base.host}/api/v1/ws`;
     const socket = new WebSocket(url, ['teamflow', `bearer.${token}`]);

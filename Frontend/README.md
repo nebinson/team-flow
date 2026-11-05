@@ -1,6 +1,6 @@
 # TeamFlow frontend
 
-React + Vite + TypeScript client. Copy `.env.example` to `.env`, then run `npm install` and `npm run dev` from this directory. For another computer, set `VITE_API_URL` to the backend computer's reachable URL (for example, `http://botpeter17:8000`) and allow the exact frontend origin in backend `FRONTEND_ORIGIN`.
+React + Vite + TypeScript client. Copy `.env.example` to `.env`, then run `npm install` and `npm run dev` from this directory. For another computer, set `VITE_API_URL` to the backend computer's reachable URL (for example, `http://botpeter17:8000`) and allow the exact frontend origin in backend `FRONTEND_ORIGIN`. When Nginx proxies `/api/` to FastAPI on the same host, set `VITE_API_URL=/` before building; the client will use same-origin HTTP and WebSocket connections (`/api/v1/...` and `/api/v1/ws`).
 
 ## Structure
 
