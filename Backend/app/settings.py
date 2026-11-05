@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     gemini_model: str = ""
     ollama_base_url: str = "http://localhost:11434/v1"
     ollama_model: str = ""
-    ice_servers_json: str = '[{"urls":["stun:stun.l.google.com:19302"]}]'
+    cloudflare_turn_key_id: str = ""
+    cloudflare_turn_key_token: str = ""
+    cloudflare_turn_credential_ttl: int = 86400
+    ice_servers_json: str = '[{"urls":["stun:stun.cloudflare.com:3478"]}]'
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[1] / ".env",
