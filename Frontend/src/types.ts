@@ -1,7 +1,7 @@
 export type Screen = 'login' | 'register' | 'verify' | 'workspace';
 export type Theme = 'light' | 'dark';
 export type Message = {
-  id: number;
+  id: string | number;
   sender: string;
   text: string;
   time: string;
@@ -20,5 +20,6 @@ export type Conversation = {
   unread?: number;
   pinned?: boolean;
   group?: boolean;
+  lastMessage?: string;
   messages: Message[];
 };

@@ -1,4 +1,4 @@
-/** Sign-in, registration, and six-digit email verification screens. */
+/** Username/email sign-in, profile registration, and six-digit email verification screens. */
 
 import React, { FormEvent, KeyboardEvent, useRef } from 'react';
 import { Avatar } from '../Avatar';
@@ -10,10 +10,18 @@ type AuthMode = 'login' | 'register';
 type AuthScreenProps = {
   mode: AuthMode;
   onModeChange: (mode: AuthMode) => void;
+  identifier: string;
+  onIdentifierChange: (value: string) => void;
   email: string;
   onEmailChange: (value: string) => void;
-  name: string;
-  onNameChange: (value: string) => void;
+  username: string;
+  onUsernameChange: (value: string) => void;
+  firstName: string;
+  onFirstNameChange: (value: string) => void;
+  lastName: string;
+  onLastNameChange: (value: string) => void;
+  gender: string;
+  onGenderChange: (value: string) => void;
   password: string;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -25,7 +33,7 @@ type AuthScreenProps = {
   submitting: boolean;
 };
 
-export function AuthScreen({ mode, onModeChange, email, onEmailChange, name, onNameChange, password, onPasswordChange, onSubmit, onPreview, onToggleTheme, onNotify, theme, error, submitting }: AuthScreenProps) {
+export function AuthScreen({ mode, onModeChange, identifier, onIdentifierChange, email, onEmailChange, username, onUsernameChange, firstName, onFirstNameChange, lastName, onLastNameChange, gender, onGenderChange, password, onPasswordChange, onSubmit, onPreview, onToggleTheme, onNotify, theme, error, submitting }: AuthScreenProps) {
   return <div className="auth-shell">
     <aside className="auth-story">
       <div className="auth-story-top"><Brand /><button className="theme-button story-theme" onClick={onToggleTheme} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}><Icon name={theme === 'light' ? 'moon' : 'sun'} /></button></div>
@@ -46,14 +54,21 @@ export function AuthScreen({ mode, onModeChange, email, onEmailChange, name, onN
       <section className="auth-card">
         <div className="auth-card-head"><span className="auth-overline">{mode === 'login' ? 'WELCOME BACK' : 'GET STARTED'}</span><h2>{mode === 'login' ? 'Sign in to TeamFlow' : 'Create your account'}</h2><p>{mode === 'login' ? 'Your team is right where you left it.' : 'A better workday starts with a conversation.'}</p></div>
         <form className="auth-form" onSubmit={onSubmit}>
-          {mode === 'register' && <label className="field"><span>Your name</span><input value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="e.g. Ananya Rao" autoComplete="name" required /></label>}
-          <label className="field"><span>Work email</span><input type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} placeholder="you@company.com" autoComplete="email" required /></label>
+          {mode === 'register' ? <>
+            <div className="name-fields">
+              <label className="field"><span>First name</span><input value={firstName} onChange={(event) => onFirstNameChange(event.target.value)} placeholder="First name" autoComplete="given-name" required /></label>
+              <label className="field"><span>Last name</span><input value={lastName} onChange={(event) => onLastNameChange(event.target.value)} placeholder="Last name" autoComplete="family-name" required /></label>
+            </div>
+            <label className="field"><span>Username</span><span className="username-input"><b>@</b><input value={username} onChange={(event) => onUsernameChange(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" autoComplete="username" minLength={3} maxLength={24} required /></span><small>3–24 characters · letters, numbers, and underscores</small></label>
+            <label className="field"><span>Work email</span><input type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} placeholder="you@company.com" autoComplete="email" required /></label>
+            <label className="field"><span>Gender</span><select value={gender} onChange={(event) => onGenderChange(event.target.value)} required><option value="" disabled>Select an option</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="other">Other</option><option value="prefer_not_to_say">Rather not say</option></select></label>
+          </> : <label className="field"><span>Username or email</span><input type="text" value={identifier} onChange={(event) => onIdentifierChange(event.target.value)} placeholder="@username or you@company.com" autoComplete="username" required /></label>}
           <label className="field"><span>Password</span><input type="password" value={password} onChange={(event) => onPasswordChange(event.target.value)} placeholder="At least 8 characters" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} required /></label>
           {mode === 'login' && <div className="form-meta"><label className="remember-check"><input type="checkbox" defaultChecked /><span className="fake-checkbox"><Icon name="check" size={11} /></span>Remember me</label><button type="button" className="text-button" onClick={() => onNotify('Ask your workspace admin to reset your password.')}>Forgot password?</button></div>}
           {error && <p className="auth-error" role="alert">{error}</p>}
           <button className="primary-button auth-submit" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}<Icon name="arrow" size={16} /></button>
         </form>
-        <div className="auth-switch">{mode === 'login' ? 'New to TeamFlow?' : 'Already have an account?'} <button className="text-button" onClick={() => onModeChange(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Create an account' : 'Sign in'}</button></div>
+        <div className="auth-switch">{mode === 'login' ? 'New user?' : 'Already have an account?'} <button className="text-button" onClick={() => onModeChange(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Register now' : 'Sign in'}</button></div>
         <div className="auth-divider"><span /> or <span /></div>
         <button className="demo-button" onClick={onPreview}><span className="demo-glyph">✦</span>Explore the workspace preview</button>
         <p className="privacy-note">By continuing, you agree to your organization’s communication policies.</p>

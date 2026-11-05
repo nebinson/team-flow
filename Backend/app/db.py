@@ -21,8 +21,28 @@ def initialize_database() -> tuple[MongoClient | None, Database | None]:
         database.users.create_index(
             [("email", ASCENDING)], unique=True, name="users_email_unique"
         )
+        database.users.create_index(
+            [("username", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"username": {"$type": "string"}},
+            name="users_username_unique",
+        )
         database.email_verifications.create_index(
             [("user_id", ASCENDING)], unique=True, name="email_verifications_user_unique"
+        )
+        database.conversations.create_index(
+            [("direct_key", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"type": "direct"},
+            name="conversations_direct_key_unique",
+        )
+        database.conversations.create_index(
+            [("participant_ids", ASCENDING), ("updated_at", -1)],
+            name="conversations_participants_updated",
+        )
+        database.messages.create_index(
+            [("conversation_id", ASCENDING), ("created_at", -1)],
+            name="messages_conversation_created",
         )
         database.email_verifications.create_index(
             [("expires_at", ASCENDING)],

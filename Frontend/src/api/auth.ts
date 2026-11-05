@@ -1,11 +1,13 @@
-/** Typed client for the backend's email auth and bearer-token endpoints. */
+/** Typed client for username/email auth, OTP verification, and bearer-token endpoints. */
 
-const apiRoot = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
-const authRoot = `${apiRoot}/api/v1/auth`;
+import { apiRequest } from './http';
 
 export type UserProfile = {
   id: string;
   name: string;
+  username: string;
+  first_name: string;
+  last_name: string;
   email: string;
   email_verified: boolean;
   created_at: string;
@@ -17,38 +19,15 @@ export type AccessToken = {
   expires_in: number;
 };
 
-async function request<T>(path: string, body?: unknown, token?: string): Promise<T> {
-  const response = await fetch(`${authRoot}${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: {
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = payload?.detail;
-    const message = typeof detail === 'string'
-      ? detail
-      : Array.isArray(detail)
-        ? detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(' ')
-        : 'TeamFlow could not complete that request. Please try again.';
-    throw new Error(message);
-  }
-  return payload as T;
-}
-
 export const authApi = {
-  register: (input: { name: string; email: string; password: string }) =>
-    request<{ message: string }>('/register', input),
+  register: (input: { first_name: string; last_name: string; username: string; email: string; gender: string; password: string }) =>
+    apiRequest<{ message: string }>('/api/v1/auth/register', { method: 'POST', body: JSON.stringify(input) }),
   resendCode: (email: string) =>
-    request<{ message: string }>('/resend-verification', { email }),
+    apiRequest<{ message: string }>('/api/v1/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
   verifyCode: (email: string, code: string) =>
-    request<{ message: string }>('/verify-email', { email, code }),
-  login: (email: string, password: string) =>
-    request<AccessToken>('/login', { email, password }),
+    apiRequest<{ message: string }>('/api/v1/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code }) }),
+  login: (identifier: string, password: string) =>
+    apiRequest<AccessToken>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ identifier, password }) }),
   currentUser: (token: string) =>
-    request<UserProfile>('/me', undefined, token),
+    apiRequest<UserProfile>('/api/v1/auth/me', {}, token),
 };

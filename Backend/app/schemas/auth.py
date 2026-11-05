@@ -1,22 +1,31 @@
-"""Validated payloads and public response schemas for authentication routes."""
+"""Validated registration/login payloads and public auth responses."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
+    first_name: str = Field(min_length=1, max_length=50)
+    last_name: str = Field(min_length=1, max_length=50)
+    username: str = Field(min_length=3, max_length=24, pattern=r"^[a-z0-9_]+$")
     email: EmailStr
+    gender: Literal["female", "male", "non_binary", "other", "prefer_not_to_say"]
     password: str = Field(min_length=8, max_length=128)
 
-    @field_validator("name")
+    @field_validator("first_name", "last_name")
     @classmethod
-    def normalize_name(cls, value: str) -> str:
+    def normalize_name_part(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("Name cannot be blank.")
+            raise ValueError("Name fields cannot be blank.")
         return normalized
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        return str(value).strip().casefold().removeprefix("@")
 
     @field_validator("email")
     @classmethod
@@ -25,13 +34,14 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    identifier: str = Field(min_length=1, max_length=320)
     password: str = Field(min_length=1, max_length=128)
 
-    @field_validator("email")
+    @field_validator("identifier")
     @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        return str(value).strip().casefold()
+    def normalize_identifier(cls, value: str) -> str:
+        normalized = str(value).strip().casefold()
+        return normalized if "@" in normalized else normalized.removeprefix("@")
 
 
 class EmailRequest(BaseModel):
@@ -66,6 +76,9 @@ class AccessTokenResponse(BaseModel):
 class UserResponse(BaseModel):
     id: str
     name: str
+    username: str
+    first_name: str
+    last_name: str
     email: EmailStr
     email_verified: bool
     created_at: datetime

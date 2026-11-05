@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { authApi } from './api/auth';
+import { conversationFromApi, messageFromApi, messagingApi } from './api/messaging';
 import { AuthScreen, VerificationScreen } from './components/auth/AuthScreens';
 import { Toast } from './components/Toast';
 import { Workspace } from './components/workspace/Workspace';
@@ -11,13 +12,20 @@ import type { Message, Screen, Theme } from './types';
 export default function App() {
   const [screen, setScreen] = useState<Screen>('login');
   const [theme, setTheme] = useState<Theme>(() => localStorage.getItem('teamflow-theme') === 'dark' ? 'dark' : 'light');
+  const [identifier, setIdentifier] = useState('');
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [gender, setGender] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [otpError, setOtpError] = useState('');
   const [resendSeconds, setResendSeconds] = useState(60);
   const [activeId, setActiveId] = useState('design');
+  const [conversations, setConversations] = useState(seedConversations);
+  const [isDemo, setIsDemo] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState('');
   const [messagesByConversation, setMessagesByConversation] = useState<Record<string, Message[]>>(() => Object.fromEntries(seedConversations.map((item) => [item.id, item.messages])));
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -50,15 +58,29 @@ export default function App() {
 
   function notify(message: string) { setToast(message); }
   function toggleTheme() { setTheme((current) => current === 'light' ? 'dark' : 'light'); }
-  function enterWorkspace() { setScreen('workspace'); }
+  function enterPreview() {
+    setIsDemo(true);
+    setConversations(seedConversations);
+    setMessagesByConversation(Object.fromEntries(seedConversations.map((item) => [item.id, item.messages])));
+    setActiveId('design');
+    setDisplayName('Nebinson N');
+    setScreen('workspace');
+  }
 
   async function signInAndEnter() {
-    const result = await authApi.login(email, password);
+    const result = await authApi.login(identifier, password);
     setAccessToken(result.access_token);
     const profile = await authApi.currentUser(result.access_token);
     setDisplayName(profile.name);
+    setCurrentUserId(profile.id);
+    const apiConversations = await messagingApi.listConversations(result.access_token);
+    const mappedConversations = apiConversations.map((item) => conversationFromApi(item, profile.id));
+    setConversations(mappedConversations);
+    setMessagesByConversation({});
+    setActiveId(mappedConversations[0]?.id ?? '');
+    setIsDemo(false);
     setPassword('');
-    enterWorkspace();
+    setScreen('workspace');
   }
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
@@ -67,7 +89,7 @@ export default function App() {
     setIsSubmitting(true);
     if (screen === 'register') {
       try {
-        await authApi.register({ name, email, password });
+        await authApi.register({ first_name: firstName, last_name: lastName, username, email, gender, password });
         setOtp(['', '', '', '', '', '']);
         setOtpError('');
         setResendSeconds(60);
@@ -138,18 +160,70 @@ export default function App() {
     event?.preventDefault();
     const text = draft.trim();
     if (!text) return;
-    const conversation = seedConversations.find((item) => item.id === activeId) ?? seedConversations[0];
+    const conversation = conversations.find((item) => item.id === activeId);
+    if (!conversation) return;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setMessagesByConversation((current) => ({
-      ...current,
-      [conversation.id]: [...(current[conversation.id] ?? conversation.messages), { id: Date.now(), sender: 'You', text, time, own: true }],
-    }));
-    setDraft('');
+    if (isDemo) {
+      setMessagesByConversation((current) => ({
+        ...current,
+        [conversation.id]: [...(current[conversation.id] ?? conversation.messages), { id: Date.now(), sender: 'You', text, time, own: true }],
+      }));
+      setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, lastMessage: text, time } : item));
+      setDraft('');
+      return;
+    }
+    if (!accessToken) return;
+    void messagingApi.sendMessage(accessToken, conversation.id, text).then((saved) => {
+      const message = messageFromApi(saved, currentUserId);
+      setMessagesByConversation((current) => {
+        const existing = current[conversation.id] ?? [];
+        if (existing.some((item) => item.id === message.id)) return current;
+        return { ...current, [conversation.id]: [...existing, message] };
+      });
+      setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, lastMessage: text, time: message.time } : item));
+      setDraft('');
+    }).catch((error: unknown) => notify(error instanceof Error ? error.message : 'Message could not be sent.'));
   }
+
+  async function createConversation(targetUsername: string) {
+    if (!accessToken) throw new Error('Sign in to start a conversation.');
+    const response = await messagingApi.createDirectConversation(accessToken, targetUsername);
+    const conversation = conversationFromApi(response, currentUserId);
+    setConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)]);
+    setMessagesByConversation((current) => ({ ...current, [conversation.id]: current[conversation.id] ?? [] }));
+    setActiveId(conversation.id);
+  }
+
+  useEffect(() => {
+    if (screen !== 'workspace' || isDemo || !accessToken || !currentUserId || !activeId) return;
+    let active = true;
+    const socket = messagingApi.connectConversation(accessToken, activeId, (incoming) => {
+      const message = messageFromApi(incoming, currentUserId);
+      setMessagesByConversation((current) => {
+        const existing = current[activeId] ?? [];
+        if (existing.some((item) => item.id === message.id)) return current;
+        return { ...current, [activeId]: [...existing, message] };
+      });
+      setConversations((current) => current.map((item) => item.id === activeId ? { ...item, lastMessage: incoming.body, time: message.time } : item));
+    });
+    void messagingApi.listMessages(accessToken, activeId).then((records) => {
+      if (!active) return;
+      const fetched = records.map((item) => messageFromApi(item, currentUserId));
+      setMessagesByConversation((current) => {
+        const combined = new Map<string | number, Message>();
+        [...fetched, ...(current[activeId] ?? [])].forEach((item) => combined.set(item.id, item));
+        return { ...current, [activeId]: [...combined.values()] };
+      });
+    }).catch((error: unknown) => notify(error instanceof Error ? error.message : 'Message history could not be loaded.'));
+    return () => {
+      active = false;
+      socket.close();
+    };
+  }, [accessToken, activeId, currentUserId, isDemo, screen]);
 
   if (screen === 'login' || screen === 'register') {
     return <>
-      <AuthScreen mode={screen} onModeChange={(mode) => { setAuthError(''); setScreen(mode); }} email={email} onEmailChange={setEmail} name={name} onNameChange={setName} password={password} onPasswordChange={setPassword} onSubmit={submitAuth} onPreview={enterWorkspace} onToggleTheme={toggleTheme} onNotify={notify} theme={theme} error={authError} submitting={isSubmitting} />
+      <AuthScreen mode={screen} onModeChange={(mode) => { setAuthError(''); setScreen(mode); }} identifier={identifier} onIdentifierChange={setIdentifier} email={email} onEmailChange={setEmail} username={username} onUsernameChange={setUsername} firstName={firstName} onFirstNameChange={setFirstName} lastName={lastName} onLastNameChange={setLastName} gender={gender} onGenderChange={setGender} password={password} onPasswordChange={setPassword} onSubmit={submitAuth} onPreview={enterPreview} onToggleTheme={toggleTheme} onNotify={notify} theme={theme} error={authError} submitting={isSubmitting} />
       <Toast message={toast} />
     </>;
   }
@@ -161,5 +235,5 @@ export default function App() {
     </>;
   }
 
-  return <Workspace theme={theme} currentUserName={displayName} onToggleTheme={toggleTheme} onSignOut={() => { setAccessToken(''); setScreen('login'); }} onToast={notify} conversations={seedConversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={setActiveId} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} callKind={callKind} onCall={setCallKind} onCloseCall={() => setCallKind('')} toast={toast} />;
+  return <Workspace theme={theme} currentUserName={displayName} accessToken={accessToken} isDemo={isDemo} onCreateConversation={createConversation} onToggleTheme={toggleTheme} onSignOut={() => { setAccessToken(''); setCurrentUserId(''); setIsDemo(false); setScreen('login'); }} onToast={notify} conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={setActiveId} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} callKind={callKind} onCall={setCallKind} onCloseCall={() => setCallKind('')} toast={toast} />;
 }

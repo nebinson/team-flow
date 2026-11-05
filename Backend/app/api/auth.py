@@ -6,7 +6,6 @@ codes are scoped to an email address, expire, and allow at most five attempts.
 
 import hmac
 
-import jwt
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -28,6 +27,7 @@ from app.schemas.auth import (
 )
 from app.security import (
     create_access_token,
+    decode_access_token,
     hash_email_verification_code,
     hash_password,
     verify_password,
@@ -40,7 +40,6 @@ from app.services.email_verification import (
 from app.settings import settings
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
-_DUMMY_PASSWORD_HASH = hash_password("not-a-real-teamflow-password")
 _bearer = HTTPBearer(auto_error=False)
 _REGISTRATION_MESSAGE = (
     "If this address can be registered, a verification email will be sent."
@@ -61,9 +60,16 @@ def _require_auth_configuration(*, email: bool = False) -> None:
 
 
 def _public_user(user: UserDocument) -> UserResponse:
+    full_name = user.get("name", "TeamFlow user")
+    name_parts = full_name.split(maxsplit=1)
+    first_name = user.get("first_name") or name_parts[0]
+    last_name = user.get("last_name") or (name_parts[1] if len(name_parts) > 1 else "")
     return UserResponse(
         id=str(user["_id"]),
-        name=user["name"],
+        name=f"{first_name} {last_name}".strip(),
+        username=user.get("username", ""),
+        first_name=first_name,
+        last_name=last_name,
         email=user["email"],
         email_verified=user["email_verified"],
         created_at=user["created_at"],
@@ -89,9 +95,29 @@ def register(payload: RegisterRequest, database: Database = Depends(get_database
     now = utc_now()
     user = database.users.find_one({"email": payload.email})
 
+    if user is not None:
+        if not user.get("email_verified", False):
+            _send_verification(database, user)
+            return AuthMessage(message=_REGISTRATION_MESSAGE)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account already uses this email. Sign in with your username or email.",
+        )
+
+    if database.users.find_one({"username": payload.username}, {"_id": 1}):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That username is already taken. Choose another one.",
+        )
+
     if user is None:
+        full_name = f"{payload.first_name} {payload.last_name}"
         user: UserDocument = {
-            "name": payload.name,
+            "name": full_name,
+            "first_name": payload.first_name,
+            "last_name": payload.last_name,
+            "username": payload.username,
+            "gender": payload.gender,
             "email": payload.email,
             "password_hash": hash_password(payload.password),
             "email_verified": False,
@@ -102,9 +128,14 @@ def register(payload: RegisterRequest, database: Database = Depends(get_database
             result = database.users.insert_one(user)
             user["_id"] = result.inserted_id
         except DuplicateKeyError:
-            user = database.users.find_one({"email": payload.email})
-
-    if user and not user.get("email_verified", False):
+            existing_email = database.users.find_one({"email": payload.email})
+            if existing_email and not existing_email.get("email_verified", False):
+                _send_verification(database, existing_email)
+                return AuthMessage(message=_REGISTRATION_MESSAGE)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="That username or email is already in use.",
+            )
         _send_verification(database, user)
 
     return AuthMessage(message=_REGISTRATION_MESSAGE)
@@ -177,21 +208,27 @@ def login(
 ) -> AccessTokenResponse:
     """Authenticate a verified account and issue a short-lived bearer token."""
     _require_auth_configuration()
-    user = database.users.find_one({"email": payload.email})
-    password_hash = (
-        user.get("password_hash", _DUMMY_PASSWORD_HASH)
-        if user
-        else _DUMMY_PASSWORD_HASH
+    lookup = (
+        {"email": payload.identifier}
+        if "@" in payload.identifier
+        else {"username": payload.identifier}
     )
+    user = database.users.find_one(lookup)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="We couldn't find an account with that username or email. New user? Register now.",
+        )
+    password_hash = user.get("password_hash", "")
     try:
         password_matches = verify_password(payload.password, password_hash)
     except (UnknownHashError, ValueError):
         password_matches = False
 
-    if not user or not password_matches:
+    if not password_matches:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email or password is incorrect.",
+            detail="Password is incorrect.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if not user.get("email_verified", False):
@@ -223,15 +260,10 @@ def get_current_user(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication is not configured.",
         )
+    subject = decode_access_token(credentials.credentials)
     try:
-        claims = jwt.decode(
-            credentials.credentials,
-            settings.jwt_secret,
-            algorithms=[settings.jwt_algorithm],
-            options={"require": ["exp", "sub"]},
-        )
-        user = database.users.find_one({"_id": ObjectId(claims["sub"])})
-    except (jwt.InvalidTokenError, ValueError, TypeError):
+        user = database.users.find_one({"_id": ObjectId(subject)}) if subject else None
+    except (ValueError, TypeError):
         user = None
 
     if user is None:

@@ -35,6 +35,21 @@ def create_access_token(user_id: str) -> str:
     )
 
 
+def decode_access_token(token: str) -> str | None:
+    """Return the subject for a valid configured JWT, else None."""
+    try:
+        claims = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+            options={"require": ["exp", "sub"]},
+        )
+    except jwt.InvalidTokenError:
+        return None
+    subject = claims.get("sub")
+    return subject if isinstance(subject, str) else None
+
+
 def create_email_verification_code() -> str:
     """Generate a zero-padded, cryptographically random six-digit code."""
     return f"{secrets.randbelow(1_000_000):06d}"
