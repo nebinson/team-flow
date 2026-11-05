@@ -31,4 +31,4 @@ Do not commit `.env` files or production credentials. Configure separate environ
 
 ## Current implementation status
 
-The backend now has MongoDB user and email-verification document shapes, unique/expiry indexes, account registration, Resend verification links, email verification, password login, bearer tokens, and an authenticated profile endpoint. See [Backend/README.md](Backend/README.md) for database details and API routes.
+The backend has MongoDB user and email-verification document shapes, indexes, and initial auth routes. The frontend now has modular auth, code-entry, and chat workspace screens with local prototype interactions. See [Backend/README.md](Backend/README.md) and [Frontend/README.md](Frontend/README.md) for details.
