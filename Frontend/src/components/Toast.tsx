@@ -1,3 +1,5 @@
+/** Transient status message for prototype actions and API feedback. */
+
 import { Icon } from './Icon';
 
 export function Toast({ message }: { message: string }) {

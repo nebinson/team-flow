@@ -1,3 +1,5 @@
+/** Conversation metadata, sample AI summary, and tone overview sidebar. */
+
 import type { Conversation } from '../../types';
 import { Avatar } from '../Avatar';
 import { Icon } from '../Icon';

@@ -1,3 +1,5 @@
+"""MongoDB connection lifecycle, indexes, and request-scoped database access."""
+
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, Request
@@ -11,7 +13,7 @@ def initialize_database() -> tuple[MongoClient | None, Database | None]:
     if not settings.mongodb_uri:
         return None, None
 
-    client = MongoClient(settings.mongodb_uri, serverSelectionTimeoutMS=5000)
+    client = MongoClient(settings.mongodb_uri, serverSelectionTimeoutMS=5000, tz_aware=True)
     try:
         client.admin.command("ping")
         database = client[settings.mongodb_database]

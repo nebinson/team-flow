@@ -1,3 +1,5 @@
+/** Small inline SVG icon set used to keep controls consistent without a UI kit. */
+
 import React from 'react';
 
 export type IconName = 'chat' | 'search' | 'plus' | 'sun' | 'moon' | 'phone' | 'video' | 'info' | 'send' | 'smile' | 'paperclip' | 'mic' | 'close' | 'chevron' | 'check' | 'sparkles' | 'more' | 'arrow' | 'bell' | 'bookmark' | 'users' | 'logout' | 'back' | 'copy';

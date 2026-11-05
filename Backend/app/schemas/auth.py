@@ -1,3 +1,5 @@
+"""Validated payloads and public response schemas for authentication routes."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -42,7 +44,13 @@ class EmailRequest(BaseModel):
 
 
 class VerifyEmailRequest(BaseModel):
-    token: str = Field(min_length=20, max_length=256)
+    email: EmailStr
+    code: str = Field(pattern=r"^[0-9]{6}$")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).strip().casefold()
 
 
 class AuthMessage(BaseModel):

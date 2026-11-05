@@ -1,3 +1,5 @@
+/** Composes the modular workspace panels and their shared selection state. */
+
 import { useState, type FormEvent } from 'react';
 import type { Conversation, Message, Theme } from '../../types';
 import { Toast } from '../Toast';
@@ -9,6 +11,7 @@ import { SidebarRail } from './SidebarRail';
 
 type Props = {
   theme: Theme;
+  currentUserName: string;
   onToggleTheme: () => void;
   onSignOut: () => void;
   onToast: (message: string) => void;
@@ -31,7 +34,7 @@ type Props = {
   toast: string;
 };
 
-export function Workspace({ theme, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, detailsOpen, onToggleDetails, callKind, onCall, onCloseCall, toast }: Props) {
+export function Workspace({ theme, currentUserName, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, detailsOpen, onToggleDetails, callKind, onCall, onCloseCall, toast }: Props) {
   const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('chat');
   const conversation = conversations.find((item) => item.id === activeId) ?? conversations[0];
   const messages = messagesByConversation[conversation.id] ?? conversation.messages;
@@ -41,7 +44,7 @@ export function Workspace({ theme, onToggleTheme, onSignOut, onToast, conversati
   }
 
   return <div className={`app-shell mobile-${mobilePanel}-active`}>
-    <SidebarRail theme={theme} onToggleTheme={onToggleTheme} onToast={onToast} onSignOut={onSignOut} />
+    <SidebarRail theme={theme} currentUserName={currentUserName} onToggleTheme={onToggleTheme} onToast={onToast} onSignOut={onSignOut} />
     <ConversationList conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelect={selectConversation} query={query} onQueryChange={onQueryChange} filter={filter} onFilterChange={onFilterChange} onToast={onToast} />
     <ChatRoom conversation={conversation} messages={messages} detailsOpen={detailsOpen} draft={draft} onDraftChange={onDraftChange} onSend={onSend} onCall={onCall} onToggleDetails={onToggleDetails} onToast={onToast} onBackToList={() => setMobilePanel('list')} />
     {detailsOpen && <DetailsPanel conversation={conversation} onClose={onToggleDetails} onCall={onCall} onToast={onToast} />}

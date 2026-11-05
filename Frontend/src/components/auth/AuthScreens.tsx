@@ -1,3 +1,5 @@
+/** Sign-in, registration, and six-digit email verification screens. */
+
 import React, { FormEvent, KeyboardEvent, useRef } from 'react';
 import { Avatar } from '../Avatar';
 import { Brand } from '../Brand';
@@ -19,9 +21,11 @@ type AuthScreenProps = {
   onToggleTheme: () => void;
   onNotify: (message: string) => void;
   theme: Theme;
+  error: string;
+  submitting: boolean;
 };
 
-export function AuthScreen({ mode, onModeChange, email, onEmailChange, name, onNameChange, password, onPasswordChange, onSubmit, onPreview, onToggleTheme, onNotify, theme }: AuthScreenProps) {
+export function AuthScreen({ mode, onModeChange, email, onEmailChange, name, onNameChange, password, onPasswordChange, onSubmit, onPreview, onToggleTheme, onNotify, theme, error, submitting }: AuthScreenProps) {
   return <div className="auth-shell">
     <aside className="auth-story">
       <div className="auth-story-top"><Brand /><button className="theme-button story-theme" onClick={onToggleTheme} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}><Icon name={theme === 'light' ? 'moon' : 'sun'} /></button></div>
@@ -46,7 +50,8 @@ export function AuthScreen({ mode, onModeChange, email, onEmailChange, name, onN
           <label className="field"><span>Work email</span><input type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} placeholder="you@company.com" autoComplete="email" required /></label>
           <label className="field"><span>Password</span><input type="password" value={password} onChange={(event) => onPasswordChange(event.target.value)} placeholder="At least 8 characters" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={8} required /></label>
           {mode === 'login' && <div className="form-meta"><label className="remember-check"><input type="checkbox" defaultChecked /><span className="fake-checkbox"><Icon name="check" size={11} /></span>Remember me</label><button type="button" className="text-button" onClick={() => onNotify('Ask your workspace admin to reset your password.')}>Forgot password?</button></div>}
-          <button className="primary-button auth-submit" type="submit">{mode === 'login' ? 'Sign in' : 'Create account'}<Icon name="arrow" size={16} /></button>
+          {error && <p className="auth-error" role="alert">{error}</p>}
+          <button className="primary-button auth-submit" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}<Icon name="arrow" size={16} /></button>
         </form>
         <div className="auth-switch">{mode === 'login' ? 'New to TeamFlow?' : 'Already have an account?'} <button className="text-button" onClick={() => onModeChange(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Create an account' : 'Sign in'}</button></div>
         <div className="auth-divider"><span /> or <span /></div>
@@ -69,9 +74,10 @@ type VerificationScreenProps = {
   onDigitChange: (index: number, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onResend: () => void;
+  submitting: boolean;
 };
 
-export function VerificationScreen({ email, digits, error, resendSeconds, theme, onToggleTheme, onBack, onDigitChange, onSubmit, onResend }: VerificationScreenProps) {
+export function VerificationScreen({ email, digits, error, resendSeconds, theme, onToggleTheme, onBack, onDigitChange, onSubmit, onResend, submitting }: VerificationScreenProps) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   function updateDigit(index: number, value: string) {
@@ -105,9 +111,9 @@ export function VerificationScreen({ email, digits, error, resendSeconds, theme,
           {digits.map((digit, index) => <input key={index} ref={(element) => { inputRefs.current[index] = element; }} id={`otp-${index}`} aria-label={`Code digit ${index + 1}`} className={error ? 'otp-invalid' : ''} type="text" inputMode="numeric" autoComplete={index === 0 ? 'one-time-code' : 'off'} maxLength={index === 0 ? 6 : 1} value={digit} onChange={(event) => updateDigit(index, event.target.value)} onKeyDown={(event) => moveFocus(event, index)} />)}
         </div>
         {error ? <p className="otp-error">{error}</p> : <p className="otp-hint">The code expires in 10 minutes. Keep this window open.</p>}
-        <button className="primary-button verify-submit" type="submit">Verify email <Icon name="arrow" size={16} /></button>
+        <button className="primary-button verify-submit" type="submit" disabled={submitting}>{submitting ? 'Verifying…' : 'Verify email'} <Icon name="arrow" size={16} /></button>
       </form>
-      <div className="resend-row">Didn’t receive it? {resendSeconds > 0 ? <span>Resend in <b>0:{String(resendSeconds).padStart(2, '0')}</b></span> : <button className="text-button" onClick={onResend}>Send a new code</button>}</div>
+      <div className="resend-row">Didn’t receive it? {resendSeconds > 0 ? <span>Resend in <b>0:{String(resendSeconds).padStart(2, '0')}</b></span> : <button className="text-button" disabled={submitting} onClick={onResend}>Send a new code</button>}</div>
       <div className="verify-help"><span className="help-icon"><Icon name="info" size={15} /></span><p>Check your spam folder, or make sure <strong>{email || 'your email address'}</strong> is correct.</p></div>
     </main>
     <footer className="verify-footer"><span className="secure-dot" /> Your email stays private and secure</footer>

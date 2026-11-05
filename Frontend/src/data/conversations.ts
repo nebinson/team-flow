@@ -1,3 +1,5 @@
+/** Local preview conversations used until message APIs are implemented. */
+
 import type { Conversation } from '../types';
 
 export const seedConversations: Conversation[] = [

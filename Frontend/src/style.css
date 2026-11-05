@@ -129,6 +129,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .fake-checkbox { display: grid; place-items: center; width: 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: transparent; }
 .remember-check input:checked + .fake-checkbox { border-color: var(--accent); background: var(--accent); color: white; }
 .auth-submit { width: 100%; margin-top: 2px; }
+.auth-error { margin: -4px 0 0; color: #d35e68; font-size: 11px; line-height: 1.5; }
 .auth-submit svg { margin-left: auto; }
 .auth-switch { margin-top: 22px; color: var(--muted); text-align: center; font-size: 12px; }
 .auth-switch .text-button { margin-left: 3px; font-size: 12px; }

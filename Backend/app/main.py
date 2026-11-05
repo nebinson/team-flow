@@ -1,3 +1,5 @@
+"""FastAPI application assembly and startup/shutdown lifecycle."""
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI

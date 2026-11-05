@@ -1,3 +1,5 @@
+"""Typed document shapes stored in MongoDB collections."""
+
 from datetime import datetime
 from typing import NotRequired, TypedDict
 
@@ -16,7 +18,8 @@ class UserDocument(TypedDict):
 
 class EmailVerificationDocument(TypedDict):
     user_id: ObjectId
-    token_hash: str
+    code_hash: str
     expires_at: datetime
     created_at: datetime
     last_sent_at: datetime
+    attempt_count: int

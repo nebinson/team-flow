@@ -1,8 +1,17 @@
+"""Registration, email verification, login, and current-user endpoints.
+
+The registration and resend responses are intentionally generic. Verification
+codes are scoped to an email address, expire, and allow at most five attempts.
+"""
+
+import hmac
+
 import jwt
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib.exceptions import UnknownHashError
+from pymongo import ReturnDocument
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
@@ -19,7 +28,7 @@ from app.schemas.auth import (
 )
 from app.security import (
     create_access_token,
-    hash_email_verification_token,
+    hash_email_verification_code,
     hash_password,
     verify_password,
 )
@@ -75,6 +84,7 @@ def _send_verification(database: Database, user: dict) -> None:
     status_code=status.HTTP_202_ACCEPTED,
 )
 def register(payload: RegisterRequest, database: Database = Depends(get_database)) -> AuthMessage:
+    """Create an unverified account and send a code without disclosing account state."""
     _require_auth_configuration(email=True)
     now = utc_now()
     user = database.users.find_one({"email": payload.email})
@@ -108,6 +118,7 @@ def register(payload: RegisterRequest, database: Database = Depends(get_database
 def resend_verification(
     payload: EmailRequest, database: Database = Depends(get_database)
 ) -> AuthMessage:
+    """Request another code; the service enforces a per-account cooldown."""
     _require_auth_configuration(email=True)
     user = database.users.find_one({"email": payload.email})
     if user and not user.get("email_verified", False):
@@ -119,15 +130,33 @@ def resend_verification(
 def verify_email(
     payload: VerifyEmailRequest, database: Database = Depends(get_database)
 ) -> AuthMessage:
-    token_hash = hash_email_verification_token(payload.token)
-    verification = database.email_verifications.find_one_and_delete(
-        {"token_hash": token_hash, "expires_at": {"$gt": utc_now()}}
-    )
-    if verification is None:
+    """Consume a valid email/code pair while atomically incrementing attempts."""
+    code_hash = hash_email_verification_code(payload.code)
+    user = database.users.find_one({"email": payload.email, "email_verified": False})
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The verification link is invalid or has expired.",
+            detail="The code is invalid, expired, or the attempt limit was reached.",
         )
+
+    verification = database.email_verifications.find_one_and_update(
+        {
+            "user_id": user["_id"],
+            "expires_at": {"$gt": utc_now()},
+            "attempt_count": {"$lt": 5},
+        },
+        {"$inc": {"attempt_count": 1}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if verification is None or not hmac.compare_digest(code_hash, verification["code_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The code is invalid, expired, or the attempt limit was reached.",
+        )
+
+    database.email_verifications.delete_one(
+        {"_id": verification["_id"], "code_hash": code_hash}
+    )
 
     result = database.users.update_one(
         {"_id": verification["user_id"], "email_verified": False},
@@ -138,7 +167,7 @@ def verify_email(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The account could not be verified.",
         )
-    return AuthMessage(message="Email verified. You can now sign in.")
+    return AuthMessage(message="Email verified.")
 
 
 @router.post("/login", response_model=AccessTokenResponse)
@@ -146,6 +175,7 @@ def login(
     payload: LoginRequest,
     database: Database = Depends(get_database),
 ) -> AccessTokenResponse:
+    """Authenticate a verified account and issue a short-lived bearer token."""
     _require_auth_configuration()
     user = database.users.find_one({"email": payload.email})
     password_hash = (
@@ -181,6 +211,7 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     database: Database = Depends(get_database),
 ) -> dict:
+    """Resolve a required bearer token to its MongoDB user document."""
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

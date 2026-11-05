@@ -1,3 +1,5 @@
+"""Environment-backed settings shared by the API and backend services."""
+
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,7 +14,7 @@ class Settings(BaseSettings):
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 30
-    email_verification_token_minutes: int = 1440
+    email_verification_code_minutes: int = 10
     verification_resend_cooldown_seconds: int = 60
     resend_api_key: str = ""
     email_from: str = ""

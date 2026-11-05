@@ -1,3 +1,5 @@
+/** Active conversation header, message history, sentiment tags, and composer. */
+
 import React, { FormEvent, KeyboardEvent, useRef } from 'react';
 import type { Conversation, Message } from '../../types';
 import { Avatar } from '../Avatar';

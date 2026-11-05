@@ -1,3 +1,5 @@
+/** Call preview shell; media and WebRTC signaling will be wired later. */
+
 import { Avatar } from '../Avatar';
 import { Icon } from '../Icon';
 import type { Conversation } from '../../types';

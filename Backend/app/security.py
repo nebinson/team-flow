@@ -1,4 +1,7 @@
+"""Password hashing, access-token creation, and verification-code utilities."""
+
 import hashlib
+import hmac
 import secrets
 from datetime import timedelta
 
@@ -12,14 +15,17 @@ _password_hash = PasswordHash.recommended()
 
 
 def hash_password(password: str) -> str:
+    """Return an Argon2 password hash suitable for storing in MongoDB."""
     return _password_hash.hash(password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
+    """Compare a candidate password with its stored Argon2 hash."""
     return _password_hash.verify(password, password_hash)
 
 
 def create_access_token(user_id: str) -> str:
+    """Create an HS256 token containing the user ID and configured expiry."""
     now = utc_now()
     expires_at = now + timedelta(minutes=settings.access_token_minutes)
     return jwt.encode(
@@ -29,9 +35,15 @@ def create_access_token(user_id: str) -> str:
     )
 
 
-def create_email_verification_token() -> str:
-    return secrets.token_urlsafe(32)
+def create_email_verification_code() -> str:
+    """Generate a zero-padded, cryptographically random six-digit code."""
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 
-def hash_email_verification_token(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+def hash_email_verification_code(code: str) -> str:
+    """HMAC the low-entropy code so database exposure alone cannot reveal it."""
+    return hmac.new(
+        settings.jwt_secret.encode("utf-8"),
+        code.encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()

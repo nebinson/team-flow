@@ -31,4 +31,4 @@ Do not commit `.env` files or production credentials. Configure separate environ
 
 ## Current implementation status
 
-The backend has MongoDB user and email-verification document shapes, indexes, and initial auth routes. The frontend now has modular auth, code-entry, and chat workspace screens with local prototype interactions. See [Backend/README.md](Backend/README.md) and [Frontend/README.md](Frontend/README.md) for details.
+The backend has MongoDB user and email-verification document shapes, indexes, and email-code authentication routes. The frontend has modular auth, six-digit code-entry, and chat workspace screens; auth is wired to the API while chat remains prototype-driven. See [Backend/README.md](Backend/README.md) and [Frontend/README.md](Frontend/README.md) for details.

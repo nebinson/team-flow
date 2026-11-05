@@ -1,3 +1,5 @@
+/** Searchable conversation list with all/unread filters. */
+
 import type { Conversation, Message } from '../../types';
 import { Avatar } from '../Avatar';
 import { Icon } from '../Icon';
