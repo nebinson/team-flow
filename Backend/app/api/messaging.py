@@ -1,7 +1,11 @@
 """Authenticated direct-message APIs and local WebSocket fan-out."""
 
 import asyncio
+import json
 import re
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 from collections import defaultdict
 from datetime import datetime
 
@@ -26,6 +30,43 @@ from app.security import decode_access_token
 from app.settings import settings
 
 router = APIRouter(tags=["messaging"])
+_CALL_SIGNAL_TYPES = {"call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy"}
+
+
+@router.get("/calls/ice-servers")
+def get_call_ice_servers(user: dict = Depends(get_current_user)) -> dict:
+    """Return short-lived Cloudflare TURN credentials for an authenticated call."""
+    del user  # Authentication is the permission check for ephemeral call credentials.
+    if not settings.cloudflare_turn_key_id or not settings.cloudflare_turn_key_token:
+        try:
+            servers = json.loads(settings.ice_servers_json)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=503, detail="Call networking is not configured.") from exc
+        return {"ice_servers": servers}
+
+    ttl = max(300, min(settings.cloudflare_turn_credential_ttl, 172800))
+    endpoint = (
+        "https://rtc.live.cloudflare.com/v1/turn/keys/"
+        f"{quote(settings.cloudflare_turn_key_id, safe='')}/credentials/generate-ice-servers"
+    )
+    request = Request(
+        endpoint,
+        data=json.dumps({"ttl": ttl}).encode(),
+        headers={
+            "Authorization": f"Bearer {settings.cloudflare_turn_key_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read())
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=502, detail="Could not obtain call network credentials.") from exc
+    ice_servers = payload.get("iceServers")
+    if not isinstance(ice_servers, list) or not ice_servers:
+        raise HTTPException(status_code=502, detail="Cloudflare returned invalid call network credentials.")
+    return {"ice_servers": ice_servers}
 
 
 class ConversationConnectionManager:
@@ -405,8 +446,10 @@ async def workspace_socket(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "pong"})
                 continue
 
+            event_type = event.get("type")
             conversation_id = event.get("conversation_id")
-            if event.get("type") not in {"typing", "stop_typing"} or not isinstance(conversation_id, str):
+            if (event_type not in {"typing", "stop_typing"} | _CALL_SIGNAL_TYPES
+                    or not isinstance(conversation_id, str)):
                 continue
             try:
                 conversation_object_id = ObjectId(conversation_id)
@@ -418,10 +461,43 @@ async def workspace_socket(websocket: WebSocket) -> None:
             if conversation is None:
                 continue
             peers = [str(item) for item in conversation["participant_ids"] if item != user_id]
-            connections.publish(
-                peers,
-                {"type": event["type"], "conversation_id": conversation_id, "user_id": str(user_id)},
-            )
+            if event_type in _CALL_SIGNAL_TYPES:
+                target_user_id = event.get("to_user_id")
+                call_id = event.get("call_id")
+                if not isinstance(target_user_id, str) or target_user_id not in peers:
+                    continue
+                if not isinstance(call_id, str) or len(call_id) > 100:
+                    continue
+                if event_type == "call_offer" and not connections.is_online(target_user_id):
+                    connections.publish(
+                        [str(user_id)],
+                        {"type": "call_unavailable", "conversation_id": conversation_id, "call_id": call_id},
+                    )
+                    continue
+                forwarded = {
+                    "type": event_type,
+                    "conversation_id": conversation_id,
+                    "call_id": call_id,
+                    "from_user_id": str(user_id),
+                }
+                if event_type == "call_offer":
+                    if event.get("call_kind") not in {"audio", "video"} or not isinstance(event.get("sdp"), dict):
+                        continue
+                    forwarded.update({"call_kind": event["call_kind"], "sdp": event["sdp"]})
+                elif event_type == "call_answer":
+                    if not isinstance(event.get("sdp"), dict):
+                        continue
+                    forwarded["sdp"] = event["sdp"]
+                elif event_type == "call_ice":
+                    if not isinstance(event.get("candidate"), dict):
+                        continue
+                    forwarded["candidate"] = event["candidate"]
+                connections.publish([target_user_id], forwarded)
+            else:
+                connections.publish(
+                    peers,
+                    {"type": event_type, "conversation_id": conversation_id, "user_id": str(user_id)},
+                )
     except WebSocketDisconnect:
         went_offline = connections.disconnect(str(user_id), websocket)
         if went_offline:

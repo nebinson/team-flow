@@ -10,6 +10,8 @@ import { DetailsPanel } from './DetailsPanel';
 import { NewConversationDialog } from './NewConversationDialog';
 import { SidebarRail } from './SidebarRail';
 import { Icon } from '../Icon';
+import type { CallKind } from '../../api/calls';
+import type { ActiveCall } from '../../hooks/useWebRtcCall';
 
 type Props = {
   theme: Theme;
@@ -34,13 +36,17 @@ type Props = {
   typingName?: string;
   detailsOpen: boolean;
   onToggleDetails: () => void;
-  callKind: '' | 'audio' | 'video';
-  onCall: (kind: 'audio' | 'video') => void;
-  onCloseCall: () => void;
+  call: ActiveCall | null;
+  onCall: (conversationId: string, kind: CallKind) => void;
+  onAcceptCall: () => void;
+  onRejectCall: () => void;
+  onHangUp: () => void;
+  onToggleMute: () => void;
+  onToggleCamera: () => void;
   toast: string;
 };
 
-export function Workspace({ theme, currentUserName, accessToken, onCreateConversation, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, callKind, onCall, onCloseCall, toast }: Props) {
+export function Workspace({ theme, currentUserName, accessToken, onCreateConversation, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, call, onCall, onAcceptCall, onRejectCall, onHangUp, onToggleMute, onToggleCamera, toast }: Props) {
   const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('chat');
   const conversation = conversations.find((item) => item.id === activeId) ?? conversations[0];
   const messages = conversation ? messagesByConversation[conversation.id] ?? conversation.messages : [];
@@ -64,9 +70,9 @@ export function Workspace({ theme, currentUserName, accessToken, onCreateConvers
   return <div className={`app-shell mobile-${mobilePanel}-active`}>
     <SidebarRail theme={theme} currentUserName={currentUserName} onToggleTheme={onToggleTheme} onToast={onToast} onSignOut={onSignOut} />
     <ConversationList conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelect={selectConversation} query={query} onQueryChange={onQueryChange} filter={filter} onFilterChange={onFilterChange} onToast={onToast} onNewConversation={startConversation} />
-    {conversation ? <ChatRoom conversation={conversation} messages={messages} detailsOpen={detailsOpen} draft={draft} onDraftChange={onDraftChange} onTyping={onTyping} typingName={typingName} onSend={onSend} onCall={onCall} onToggleDetails={onToggleDetails} onToast={onToast} onBackToList={() => setMobilePanel('list')} /> : <EmptyConversation onNewConversation={startConversation} />}
-    {detailsOpen && conversation && <DetailsPanel conversation={conversation} onClose={onToggleDetails} onCall={onCall} onToast={onToast} />}
-    {callKind && conversation && <CallOverlay kind={callKind} conversation={conversation} onClose={onCloseCall} onToast={onToast} />}
+    {conversation ? <ChatRoom conversation={conversation} messages={messages} detailsOpen={detailsOpen} draft={draft} onDraftChange={onDraftChange} onTyping={onTyping} typingName={typingName} onSend={onSend} onCall={(kind) => onCall(conversation.id, kind)} onToggleDetails={onToggleDetails} onToast={onToast} onBackToList={() => setMobilePanel('list')} /> : <EmptyConversation onNewConversation={startConversation} />}
+    {detailsOpen && conversation && <DetailsPanel conversation={conversation} onClose={onToggleDetails} onCall={(kind) => onCall(conversation.id, kind)} onToast={onToast} />}
+    {call && <CallOverlay call={call} onAccept={onAcceptCall} onReject={onRejectCall} onHangUp={onHangUp} onToggleMute={onToggleMute} onToggleCamera={onToggleCamera} />}
     {newConversationOpen && accessToken && <NewConversationDialog token={accessToken} onClose={() => setNewConversationOpen(false)} onCreate={createConversation} />}
     <Toast message={toast} />
   </div>;

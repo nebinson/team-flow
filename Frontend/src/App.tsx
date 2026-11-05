@@ -4,9 +4,11 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { authApi } from './api/auth';
 import { ApiRequestError } from './api/http';
 import { conversationFromApi, messageFromApi, messagingApi, type ApiMessage } from './api/messaging';
+import type { CallSignal } from './api/calls';
 import { AuthScreen, VerificationScreen } from './components/auth/AuthScreens';
 import { Toast } from './components/Toast';
 import { Workspace } from './components/workspace/Workspace';
+import { useWebRtcCall } from './hooks/useWebRtcCall';
 import type { Conversation, Message, Screen, Theme } from './types';
 
 export default function App() {
@@ -34,7 +36,6 @@ export default function App() {
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [draft, setDraft] = useState('');
   const [showDetails, setShowDetails] = useState(false);
-  const [callKind, setCallKind] = useState<'' | 'audio' | 'video'>('');
   const [toast, setToast] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,6 +48,7 @@ export default function App() {
   const receivedTypingTimeouts = useRef<Record<string, number>>({});
   const conversationsRef = useRef<Conversation[]>(conversations);
   const activeIdRef = useRef(activeId);
+  const callSignalHandlerRef = useRef<(event: Record<string, unknown>) => Promise<void>>(async () => undefined);
   conversationsRef.current = conversations;
   activeIdRef.current = activeId;
 
@@ -69,6 +71,21 @@ export default function App() {
 
   function notify(message: string) { setToast(message); }
   function toggleTheme() { setTheme((current) => current === 'light' ? 'dark' : 'light'); }
+
+  function sendCallSignal(signal: CallSignal): boolean {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify(signal));
+    return true;
+  }
+
+  const callController = useWebRtcCall({
+    accessToken,
+    findConversation: (id) => conversationsRef.current.find((item) => item.id === id),
+    sendSignal: sendCallSignal,
+    onToast: notify,
+  });
+  callSignalHandlerRef.current = callController.handleSignal;
 
 function playNotificationSound() {
   try {
@@ -258,7 +275,12 @@ function playNotificationSound() {
     if (screen !== 'workspace' || !accessToken || !currentUserId) return;
     const socket = messagingApi.connectWorkspace(accessToken, (event) => {
       const type = event.type;
-      if (type === 'conversation_changed') {
+      if (typeof type === 'string' && type.startsWith('call_')) {
+        void callSignalHandlerRef.current(event).catch((error: unknown) => {
+          callController.hangUp();
+          notify(error instanceof Error ? error.message : 'Call signaling failed.');
+        });
+      } else if (type === 'conversation_changed') {
         void refreshConversations();
       } else if (type === 'presence') {
         const userId = String(event.user_id ?? '');
@@ -333,5 +355,5 @@ function playNotificationSound() {
     </>;
   }
 
-  return <Workspace theme={theme} currentUserName={displayName} accessToken={accessToken} onCreateConversation={createConversation} onToggleTheme={toggleTheme} onSignOut={() => { setAccessToken(''); setCurrentUserId(''); setConversations([]); setMessagesByConversation({}); setActiveId(''); setScreen('login'); }} onToast={notify} conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={(id) => { setActiveId(id); setConversations((current) => current.map((item) => item.id === id ? { ...item, unread: 0 } : item)); }} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onTyping={(typing) => updateTyping(typing)} typingName={typingByConversation[activeId]} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} callKind={callKind} onCall={setCallKind} onCloseCall={() => setCallKind('')} toast={toast} />;
+  return <Workspace theme={theme} currentUserName={displayName} accessToken={accessToken} onCreateConversation={createConversation} onToggleTheme={toggleTheme} onSignOut={() => { callController.hangUp(); setAccessToken(''); setCurrentUserId(''); setConversations([]); setMessagesByConversation({}); setActiveId(''); setScreen('login'); }} onToast={notify} conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={(id) => { setActiveId(id); setConversations((current) => current.map((item) => item.id === id ? { ...item, unread: 0 } : item)); }} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onTyping={(typing) => updateTyping(typing)} typingName={typingByConversation[activeId]} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} call={callController.call} onCall={(conversationId, kind) => void callController.startCall(conversationId, kind)} onAcceptCall={() => void callController.acceptCall()} onRejectCall={callController.rejectCall} onHangUp={callController.hangUp} onToggleMute={callController.toggleMute} onToggleCamera={callController.toggleCamera} toast={toast} />;
 }

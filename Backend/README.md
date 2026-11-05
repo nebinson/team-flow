@@ -4,6 +4,8 @@ FastAPI service using MongoDB Atlas. Install dependencies from this directory wi
 
 Copy .env.example to .env and set MONGODB_URI, a random JWT_SECRET of at least 32 characters, RESEND_API_KEY, and a verified EMAIL_FROM sender before using account endpoints. Set FRONTEND_ORIGIN to the exact browser origin, including scheme and port (for example, `http://botpeter17:5173`). The API can start without services configured; protected workflows return a configuration error until required settings are present.
 
+For calls, set `CLOUDFLARE_TURN_KEY_ID` to the TURN key UID and `CLOUDFLARE_TURN_KEY_TOKEN` to its secret key value. Set `CLOUDFLARE_TURN_CREDENTIAL_TTL` to the desired credential lifetime in seconds (capped at 48 hours). The long-lived token remains on the backend; `/api/v1/calls/ice-servers` returns short-lived credentials to authenticated callers.
+
 ## MongoDB collections
 
 - users: normalized unique email and username, first/last name, gender preference, Argon2 password hash, verification state, last-seen time, and timestamps. Username uniqueness is partial so existing accounts without usernames remain readable.
@@ -37,6 +39,7 @@ All endpoints require `Authorization: Bearer <access_token>`:
 - `GET /api/v1/conversations/{id}/messages?limit=50&before=...` — load a history page; limit is 1–100.
 - `POST /api/v1/conversations/{id}/messages` with `{ "body" }` — persist and return a text message (up to 4,000 characters).
 - `POST /api/v1/conversations/{id}/read` — save the member's read position and notify the other participant.
+- `GET /api/v1/calls/ice-servers` — get short-lived Cloudflare ICE/TURN credentials for a call.
 - `WS /api/v1/ws` — authenticated workspace events for new conversations/messages, presence, read receipts, and typing. The browser sends `teamflow` and `bearer.<access-token>` as WebSocket subprotocols; the server accepts only `teamflow`.
 
-Conversation membership is checked for reads, writes, and typing events. Messages and read positions are stored in MongoDB. The current WebSocket fan-out and online-presence registry are in-process for local development; multi-worker deployment will need shared pub/sub and presence storage.
+Conversation membership is checked for reads, writes, typing, and call-signaling events. One-to-one offers, answers, ICE candidates, and call termination are relayed to the other participant over the workspace WebSocket; audio/video media travels through WebRTC, using Cloudflare TURN when direct connectivity is blocked. Messages and read positions are stored in MongoDB. The current WebSocket fan-out and online-presence registry are in-process for local development; multi-worker deployment will need shared pub/sub and presence storage. Browsers require HTTPS (or localhost) for microphone and camera access, so cross-device development calls need an HTTPS frontend origin.
