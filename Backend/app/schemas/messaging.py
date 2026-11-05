@@ -64,3 +64,16 @@ class MessageResponse(BaseModel):
 
 class UserSearchResponse(BaseModel):
     users: list[UserSummary]
+
+
+class CallLogResponse(BaseModel):
+    id: str
+    conversation_id: str
+    peer: UserSummary
+    call_kind: Literal["audio", "video"]
+    direction: Literal["incoming", "outgoing"]
+    status: Literal["ringing", "ongoing", "completed", "missed", "declined", "busy", "cancelled"]
+    started_at: datetime
+    connected_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_seconds: int | None = None

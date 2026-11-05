@@ -44,6 +44,8 @@ def initialize_database() -> tuple[MongoClient | None, Database | None]:
             [("conversation_id", ASCENDING), ("created_at", -1)],
             name="messages_conversation_created",
         )
+        database.call_logs.create_index([("call_id", ASCENDING)], unique=True, name="call_logs_call_id_unique")
+        database.call_logs.create_index([("participant_ids", ASCENDING), ("started_at", -1)], name="call_logs_participants_started")
         database.email_verifications.create_index(
             [("expires_at", ASCENDING)],
             expireAfterSeconds=0,

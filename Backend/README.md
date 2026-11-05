@@ -12,6 +12,7 @@ For calls, set `CLOUDFLARE_TURN_KEY_ID` to the TURN key UID and `CLOUDFLARE_TURN
 - email_verifications: one HMAC-hashed, six-digit code per unverified user, with expiry, resend timestamp, and a five-attempt limit. MongoDB TTL removes expired records.
 - conversations: one-to-one participant IDs, a deterministic unique direct-chat key, per-member read timestamps, activity time, and a last-message preview.
 - messages: conversation ID, sender ID, text body, type, and creation time.
+- call_logs: call ID, conversation and participants, caller/callee, audio/video type, outcome, and start/connect/end timestamps. Call signaling writes status transitions so the Calls tab can show history and connected-call duration.
 
 ## Authentication endpoints
 
@@ -40,6 +41,9 @@ All endpoints require `Authorization: Bearer <access_token>`:
 - `POST /api/v1/conversations/{id}/messages` with `{ "body" }` — persist and return a text message (up to 4,000 characters).
 - `POST /api/v1/conversations/{id}/read` — save the member's read position and notify the other participant.
 - `GET /api/v1/calls/ice-servers` — get short-lived Cloudflare ICE/TURN credentials for a call.
+- `GET /api/v1/calls/logs?limit=100` — list recent calls involving the signed-in user, including peer, direction, outcome, and duration when connected.
 - `WS /api/v1/ws` — authenticated workspace events for new conversations/messages, presence, read receipts, and typing. The browser sends `teamflow` and `bearer.<access-token>` as WebSocket subprotocols; the server accepts only `teamflow`.
 
 Conversation membership is checked for reads, writes, typing, and call-signaling events. One-to-one offers, answers, ICE candidates, and call termination are relayed to the other participant over the workspace WebSocket; audio/video media travels through WebRTC, using Cloudflare TURN when direct connectivity is blocked. Messages and read positions are stored in MongoDB. The current WebSocket fan-out and online-presence registry are in-process for local development; multi-worker deployment will need shared pub/sub and presence storage. Browsers require HTTPS (or localhost) for microphone and camera access, so cross-device development calls need an HTTPS frontend origin.
+
+WebSocket call events also maintain the `call_logs` collection: offers create a ringing entry; answers mark it ongoing; rejection, timeout, busy, offline, and hang-up events record the corresponding outcome. Older calls from before call logging was added are not backfilled.

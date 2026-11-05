@@ -40,6 +40,20 @@ class MessageDocument(TypedDict):
     created_at: datetime
 
 
+class CallLogDocument(TypedDict):
+    _id: NotRequired[ObjectId]
+    call_id: str
+    conversation_id: ObjectId
+    participant_ids: list[ObjectId]
+    caller_id: ObjectId
+    callee_id: ObjectId
+    call_kind: str
+    status: str
+    started_at: datetime
+    connected_at: datetime | None
+    ended_at: datetime | None
+
+
 class EmailVerificationDocument(TypedDict):
     user_id: ObjectId
     code_hash: str

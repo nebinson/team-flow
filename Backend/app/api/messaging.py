@@ -19,6 +19,7 @@ from app.db import get_database, utc_now
 from app.models.documents import ConversationDocument, MessageDocument
 from app.schemas.messaging import (
     ConversationResponse,
+    CallLogResponse,
     CreateMessageRequest,
     DirectConversationRequest,
     LastMessageSummary,
@@ -30,7 +31,7 @@ from app.security import decode_access_token
 from app.settings import settings
 
 router = APIRouter(tags=["messaging"])
-_CALL_SIGNAL_TYPES = {"call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy"}
+_CALL_SIGNAL_TYPES = {"call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy", "call_missed"}
 
 
 @router.get("/calls/ice-servers")
@@ -301,6 +302,33 @@ def list_conversations(
     return _serialize_conversations(database, conversations)
 
 
+@router.get("/calls/logs", response_model=list[CallLogResponse])
+def list_call_logs(
+    limit: int = Query(default=100, ge=1, le=200),
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> list[CallLogResponse]:
+    """List recent calls involving the authenticated workspace member."""
+    rows = list(database.call_logs.find({"participant_ids": user["_id"]}).sort("started_at", -1).limit(limit))
+    peer_ids = {row["callee_id"] if row["caller_id"] == user["_id"] else row["caller_id"] for row in rows}
+    peers = {item["_id"]: item for item in database.users.find({"_id": {"$in": list(peer_ids)}})}
+    result = []
+    for row in rows:
+        peer_id = row["callee_id"] if row["caller_id"] == user["_id"] else row["caller_id"]
+        peer = peers.get(peer_id)
+        if peer is None:
+            continue
+        connected_at, ended_at = row.get("connected_at"), row.get("ended_at")
+        duration = max(0, int((ended_at - connected_at).total_seconds())) if connected_at and ended_at else None
+        result.append(CallLogResponse(
+            id=row["call_id"], conversation_id=str(row["conversation_id"]), peer=_user_summary(peer),
+            call_kind=row["call_kind"], direction="outgoing" if row["caller_id"] == user["_id"] else "incoming",
+            status=row["status"], started_at=row["started_at"], connected_at=connected_at,
+            ended_at=ended_at, duration_seconds=duration,
+        ))
+    return result
+
+
 @router.get(
     "/conversations/{conversation_id}/messages",
     response_model=list[MessageResponse],
@@ -468,7 +496,28 @@ async def workspace_socket(websocket: WebSocket) -> None:
                     continue
                 if not isinstance(call_id, str) or len(call_id) > 100:
                     continue
+                if event_type == "call_offer":
+                    if event.get("call_kind") not in {"audio", "video"} or not isinstance(event.get("sdp"), dict):
+                        continue
+                    now = utc_now()
+                    database.call_logs.update_one(
+                        {"call_id": call_id},
+                        {"$setOnInsert": {
+                            "call_id": call_id,
+                            "conversation_id": conversation_object_id,
+                            "participant_ids": [user_id, ObjectId(target_user_id)],
+                            "caller_id": user_id,
+                            "callee_id": ObjectId(target_user_id),
+                            "call_kind": event["call_kind"],
+                            "status": "ringing",
+                            "started_at": now,
+                            "connected_at": None,
+                            "ended_at": None,
+                        }},
+                        upsert=True,
+                    )
                 if event_type == "call_offer" and not connections.is_online(target_user_id):
+                    database.call_logs.update_one({"call_id": call_id}, {"$set": {"status": "missed", "ended_at": utc_now()}})
                     connections.publish(
                         [str(user_id)],
                         {"type": "call_unavailable", "conversation_id": conversation_id, "call_id": call_id},
@@ -481,17 +530,33 @@ async def workspace_socket(websocket: WebSocket) -> None:
                     "from_user_id": str(user_id),
                 }
                 if event_type == "call_offer":
-                    if event.get("call_kind") not in {"audio", "video"} or not isinstance(event.get("sdp"), dict):
-                        continue
                     forwarded.update({"call_kind": event["call_kind"], "sdp": event["sdp"]})
                 elif event_type == "call_answer":
                     if not isinstance(event.get("sdp"), dict):
                         continue
+                    database.call_logs.update_one(
+                        {"call_id": call_id, "participant_ids": user_id},
+                        {"$set": {"status": "ongoing", "connected_at": utc_now()}},
+                    )
                     forwarded["sdp"] = event["sdp"]
                 elif event_type == "call_ice":
                     if not isinstance(event.get("candidate"), dict):
                         continue
                     forwarded["candidate"] = event["candidate"]
+                elif event_type in {"call_reject", "call_end", "call_busy", "call_missed"}:
+                    terminal_status = {
+                        "call_reject": "declined",
+                        "call_busy": "busy",
+                        "call_missed": "missed",
+                    }.get(event_type)
+                    now = utc_now()
+                    if event_type == "call_end":
+                        current = database.call_logs.find_one({"call_id": call_id, "participant_ids": user_id})
+                        terminal_status = "completed" if current and current.get("connected_at") else "cancelled"
+                    database.call_logs.update_one(
+                        {"call_id": call_id, "participant_ids": user_id, "status": {"$in": ["ringing", "ongoing"]}},
+                        {"$set": {"status": terminal_status, "ended_at": now}},
+                    )
                 connections.publish([target_user_id], forwarded)
             else:
                 connections.publish(
