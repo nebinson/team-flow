@@ -1,0 +1,54 @@
+name: Deploy TeamFlow
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: teamflow-production-deploy
+  queue: max
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull, build, and restart TeamFlow on the VPS
+        uses: appleboy/ssh-action@v1
+        env:
+          TEAMFLOW_SYSTEMD_SERVICE: ${{ secrets.TEAMFLOW_SYSTEMD_SERVICE }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          envs: TEAMFLOW_SYSTEMD_SERVICE
+          script: |
+            set -eu
+            : "${TEAMFLOW_SYSTEMD_SERVICE:?Set the TEAMFLOW_SYSTEMD_SERVICE GitHub Actions secret to the backend systemd unit name}"
+
+            export PATH="$HOME/.local/bin:$PATH"
+            export NVM_DIR="$HOME/.nvm"
+            if [ -s "$NVM_DIR/nvm.sh" ]; then
+              . "$NVM_DIR/nvm.sh"
+              nvm use 20
+            fi
+
+            cd /var/www/team-flow
+            git fetch origin main
+            git pull --ff-only origin main
+
+            cd Backend
+            uv sync --no-dev
+
+            cd ../Frontend
+            npm install --no-audit --no-fund
+            VITE_API_URL=/ npm run build
+
+            sudo systemctl restart "$TEAMFLOW_SYSTEMD_SERVICE"
+            sudo systemctl is-active --quiet "$TEAMFLOW_SYSTEMD_SERVICE"
+            curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-connrefused http://127.0.0.1:8000/health

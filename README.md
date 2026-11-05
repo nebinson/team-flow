@@ -29,8 +29,14 @@ Prerequisites: Node.js, Python 3.12+, `uv`, and a MongoDB Atlas database.
 
 Do not commit `.env` files or production credentials. Configure separate environment variables for local development and deployment.
 
+## Production deployment
+
+The root `.github/workflows/deploy.yml` runs on every push to `main`; merging a pull request into `main` produces that push event and starts the same deployment. It connects to the VPS, fast-forwards `/var/www/team-flow`, syncs backend dependencies, builds the frontend with `VITE_API_URL=/` for the Nginx `/api/` proxy, restarts the backend service, and checks `/health`.
+
+Configure these GitHub Actions repository secrets: `VPS_HOST`, `VPS_USER`, `SSH_PRIVATE_KEY`, and `TEAMFLOW_SYSTEMD_SERVICE` (the backend systemd unit name). `SSH_PORT` is optional and defaults to `22`. The VPS user needs Git access to this repository, `uv` and Node 20 available, and passwordless sudo permission to restart and inspect that service.
+
 ## Current implementation status
 
 Implemented: Resend-backed account verification, username/email login, rotating refresh sessions, MongoDB-backed direct messaging and message history, live presence/read/typing events, Cloudflare Realtime one-to-one WebRTC calling with call logs, Naive Bayes message sentiment, and on-demand AI summaries through NVIDIA NIM with Gemini and Ollama fallbacks. See [Backend/README.md](Backend/README.md), [Frontend/README.md](Frontend/README.md), and [ML/README.md](ML/README.md) for setup and module details.
 
-Not implemented yet: group chats/conferences, voice-message file transfer, production deployment configuration, LMS ZIP packaging, project report, and demo video.
+Not implemented yet: group chats/conferences, voice-message file transfer, LMS ZIP packaging, project report, and demo video.
