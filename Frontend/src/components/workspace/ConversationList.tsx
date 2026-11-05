@@ -16,9 +16,11 @@ type Props = {
   onToast: (message: string) => void;
   onNewConversation: () => void;
   onShowCalls: () => void;
+  aiSelected: boolean;
+  onOpenAiChat: () => void;
 };
 
-export function ConversationList({ conversations, messagesByConversation, activeId, onSelect, query, onQueryChange, filter, onFilterChange, onToast, onNewConversation, onShowCalls }: Props) {
+export function ConversationList({ conversations, messagesByConversation, activeId, onSelect, query, onQueryChange, filter, onFilterChange, onToast, onNewConversation, onShowCalls, aiSelected, onOpenAiChat }: Props) {
   const visible = conversations.filter((item) => {
     const lastMessage = (messagesByConversation[item.id] ?? item.messages).at(-1);
     const matchesQuery = `${item.name} ${item.lastMessage ?? lastMessage?.text ?? ''}`.toLowerCase().includes(query.toLowerCase());
@@ -30,6 +32,9 @@ export function ConversationList({ conversations, messagesByConversation, active
     <label className="search-box"><Icon name="search" size={17} /><input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search messages" /><kbd>⌘ K</kbd></label>
     <div className="filter-tabs"><button className={filter === 'all' ? 'filter-active' : ''} onClick={() => onFilterChange('all')}>All</button><button className={filter === 'unread' ? 'filter-active' : ''} onClick={() => onFilterChange('unread')}>Unread</button><button className="filter-more" aria-label="More filters" onClick={() => onToast('More filters will be available soon.')}><Icon name="more" size={18} /></button></div>
     <div className="conversation-list">
+      <button className={`ai-conversation-row${aiSelected ? ' ai-conversation-selected' : ''}`} onClick={onOpenAiChat} aria-current={aiSelected ? 'page' : undefined}>
+        <span className="ai-conversation-icon"><Icon name="sparkles" size={17} /></span><span className="conversation-copy"><strong>TeamFlow AI</strong><small>Ask your AI assistant</small></span><Icon name="chevron" size={15} />
+      </button>
       {visible.map((conversation) => {
         const lastMessage = (messagesByConversation[conversation.id] ?? conversation.messages).at(-1);
         return <button key={conversation.id} className={`conversation-row ${activeId === conversation.id ? 'conversation-selected' : ''}`} onClick={() => onSelect(conversation.id)}>

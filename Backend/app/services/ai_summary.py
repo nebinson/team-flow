@@ -17,6 +17,14 @@ class SummaryProvidersFailedError(RuntimeError):
     """Raised when every configured summary provider fails."""
 
 
+class AIChatNotConfiguredError(RuntimeError):
+    """Raised when no AI provider is configured for chat."""
+
+
+class AIChatProvidersFailedError(RuntimeError):
+    """Raised when every configured provider fails to answer a chat message."""
+
+
 def _provider_configs() -> list[tuple[str, str, str, str]]:
     providers: list[tuple[str, str, str, str]] = []
     if settings.nim_api_key and settings.nim_model:
@@ -70,3 +78,44 @@ def generate_conversation_summary(messages: list[str]) -> tuple[str, str]:
         except Exception as exc:
             logger.warning("Conversation summary provider %s failed (%s).", provider_name, type(exc).__name__)
     raise SummaryProvidersFailedError
+
+
+def generate_ai_reply(history: list[dict[str, str]]) -> tuple[str, str]:
+    """Generate a reply with the configured NIM, Gemini, or Ollama provider."""
+    providers = _provider_configs()
+    if not providers:
+        raise AIChatNotConfiguredError
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are TeamFlow AI, a helpful assistant inside an internal team messaging app. "
+                "Answer clearly and practically. Use the conversation context when relevant, "
+                "but do not claim to have sent messages, changed files, or performed actions "
+                "outside this chat. If a request is ambiguous, ask a concise follow-up."
+            ),
+        },
+        *history,
+    ]
+    for provider_name, base_url, api_key, model in providers:
+        try:
+            client = OpenAI(
+                base_url=base_url,
+                api_key=api_key,
+                timeout=max(5, min(settings.ai_request_timeout_seconds, 90)),
+                max_retries=0,
+            )
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.6,
+                max_tokens=750,
+            )
+            answer = response.choices[0].message.content
+            if isinstance(answer, str) and answer.strip():
+                return answer.strip(), provider_name
+            raise ValueError("Provider returned an empty response.")
+        except Exception as exc:
+            logger.warning("AI chat provider %s failed (%s).", provider_name, type(exc).__name__)
+    raise AIChatProvidersFailedError

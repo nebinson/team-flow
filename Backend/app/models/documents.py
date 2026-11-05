@@ -70,3 +70,19 @@ class RefreshTokenDocument(TypedDict):
     user_id: ObjectId
     created_at: datetime
     expires_at: datetime
+
+
+class AiChatDocument(TypedDict):
+    _id: NotRequired[ObjectId]
+    user_id: ObjectId
+    created_at: datetime
+    updated_at: datetime
+
+
+class AiChatMessageDocument(TypedDict):
+    _id: NotRequired[ObjectId]
+    chat_id: ObjectId
+    role: str
+    content: str
+    created_at: datetime
+    provider: NotRequired[str]

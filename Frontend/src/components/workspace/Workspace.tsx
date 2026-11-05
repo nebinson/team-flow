@@ -5,6 +5,7 @@ import type { Conversation, Message, Theme } from '../../types';
 import { Toast } from '../Toast';
 import { CallOverlay } from './CallOverlay';
 import { ChatRoom } from './ChatRoom';
+import { AiChatRoom } from './AiChatRoom';
 import { CallLogsPanel } from './CallLogsPanel';
 import { ConversationList } from './ConversationList';
 import { DetailsPanel } from './DetailsPanel';
@@ -52,7 +53,7 @@ type Props = {
 
 export function Workspace({ theme, currentUserName, accessToken, onCreateConversation, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, call, onCall, onAcceptCall, onRejectCall, onHangUp, onToggleMute, onToggleCamera, toast, callLogs, callLogsLoading, onLoadCallLogs }: Props) {
   const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('chat');
-  const [activeView, setActiveView] = useState<'messages' | 'calls'>('messages');
+  const [activeView, setActiveView] = useState<'messages' | 'calls' | 'ai'>('messages');
   const conversation = conversations.find((item) => item.id === activeId) ?? conversations[0];
   const messages = conversation ? messagesByConversation[conversation.id] ?? conversation.messages : [];
   const [newConversationOpen, setNewConversationOpen] = useState(false);
@@ -74,11 +75,11 @@ export function Workspace({ theme, currentUserName, accessToken, onCreateConvers
   }
 
   return <div className={`app-shell mobile-${mobilePanel}-active${activeView === 'calls' ? ' calls-view-active' : ''}`}>
-    <SidebarRail theme={theme} currentUserName={currentUserName} activeView={activeView} onViewChange={(view) => { setActiveView(view); if (view === 'calls') onLoadCallLogs(); }} onToggleTheme={onToggleTheme} onToast={onToast} onSignOut={onSignOut} />
+    <SidebarRail theme={theme} currentUserName={currentUserName} activeView={activeView === 'calls' ? 'calls' : 'messages'} onViewChange={(view) => { setActiveView(view); if (view === 'calls') onLoadCallLogs(); }} onToggleTheme={onToggleTheme} onToast={onToast} onSignOut={onSignOut} />
     {activeView === 'calls' ? <CallLogsPanel logs={callLogs} loading={callLogsLoading} onCall={onCall} onShowMessages={() => setActiveView('messages')} /> : <>
-      <ConversationList conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelect={selectConversation} query={query} onQueryChange={onQueryChange} filter={filter} onFilterChange={onFilterChange} onToast={onToast} onNewConversation={startConversation} onShowCalls={() => { setActiveView('calls'); onLoadCallLogs(); }} />
-      {conversation ? <ChatRoom conversation={conversation} messages={messages} detailsOpen={detailsOpen} draft={draft} onDraftChange={onDraftChange} onTyping={onTyping} typingName={typingName} onSend={onSend} onCall={(kind) => onCall(conversation.id, kind)} onToggleDetails={onToggleDetails} onToast={onToast} onBackToList={() => setMobilePanel('list')} onShowCalls={() => { setActiveView('calls'); onLoadCallLogs(); }} /> : <EmptyConversation onNewConversation={startConversation} />}
-      {detailsOpen && conversation && <DetailsPanel key={conversation.id} conversation={conversation} token={accessToken} onClose={onToggleDetails} onCall={(kind) => onCall(conversation.id, kind)} onToast={onToast} />}
+      <ConversationList conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelect={selectConversation} query={query} onQueryChange={onQueryChange} filter={filter} onFilterChange={onFilterChange} onToast={onToast} onNewConversation={startConversation} onShowCalls={() => { setActiveView('calls'); onLoadCallLogs(); }} aiSelected={activeView === 'ai'} onOpenAiChat={() => { setActiveView('ai'); setMobilePanel('chat'); }} />
+      {activeView === 'ai' ? <AiChatRoom token={accessToken} onToast={onToast} /> : conversation ? <ChatRoom conversation={conversation} messages={messages} detailsOpen={detailsOpen} draft={draft} onDraftChange={onDraftChange} onTyping={onTyping} typingName={typingName} onSend={onSend} onCall={(kind) => onCall(conversation.id, kind)} onToggleDetails={onToggleDetails} onToast={onToast} onBackToList={() => setMobilePanel('list')} onShowCalls={() => { setActiveView('calls'); onLoadCallLogs(); }} /> : <EmptyConversation onNewConversation={startConversation} />}
+      {activeView === 'messages' && detailsOpen && conversation && <DetailsPanel key={conversation.id} conversation={conversation} token={accessToken} onClose={onToggleDetails} onCall={(kind) => onCall(conversation.id, kind)} onToast={onToast} />}
     </>}
     {call && <CallOverlay call={call} onAccept={onAcceptCall} onReject={onRejectCall} onHangUp={onHangUp} onToggleMute={onToggleMute} onToggleCamera={onToggleCamera} />}
     {newConversationOpen && accessToken && <NewConversationDialog token={accessToken} onClose={() => setNewConversationOpen(false)} onCreate={createConversation} />}

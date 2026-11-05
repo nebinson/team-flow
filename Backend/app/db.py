@@ -52,6 +52,11 @@ def initialize_database() -> tuple[MongoClient | None, Database | None]:
         )
         database.call_logs.create_index([("call_id", ASCENDING)], unique=True, name="call_logs_call_id_unique")
         database.call_logs.create_index([("participant_ids", ASCENDING), ("started_at", -1)], name="call_logs_participants_started")
+        database.ai_chats.create_index([("user_id", ASCENDING)], unique=True, name="ai_chats_user_unique")
+        database.ai_chat_messages.create_index(
+            [("chat_id", ASCENDING), ("created_at", ASCENDING)],
+            name="ai_chat_messages_chat_created",
+        )
         database.email_verifications.create_index(
             [("expires_at", ASCENDING)],
             expireAfterSeconds=0,

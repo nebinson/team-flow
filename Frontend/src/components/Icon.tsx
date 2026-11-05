@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-export type IconName = 'chat' | 'search' | 'plus' | 'sun' | 'moon' | 'phone' | 'video' | 'info' | 'send' | 'smile' | 'paperclip' | 'mic' | 'close' | 'chevron' | 'check' | 'sparkles' | 'more' | 'arrow' | 'bell' | 'bookmark' | 'users' | 'logout' | 'back' | 'copy' | 'phoneIncoming' | 'phoneOutgoing';
+export type IconName = 'chat' | 'search' | 'plus' | 'sun' | 'moon' | 'phone' | 'video' | 'info' | 'send' | 'smile' | 'paperclip' | 'mic' | 'close' | 'chevron' | 'check' | 'sparkles' | 'more' | 'arrow' | 'bell' | 'bookmark' | 'users' | 'logout' | 'back' | 'copy' | 'phoneIncoming' | 'phoneOutgoing' | 'refresh';
 
 const paths: Record<IconName, React.ReactNode> = {
   chat: <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z" />,
@@ -31,6 +31,7 @@ const paths: Record<IconName, React.ReactNode> = {
   logout: <><path d="M10 17l5-5-5-5m5 5H3m9-9h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6" /></>,
   back: <path d="m15 18-6-6 6-6" />,
   copy: <><rect x="8" y="8" width="13" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>,
+  refresh: <><path d="M20 7v5h-5" /><path d="M4 17v-5h5" /><path d="M5.6 9a7 7 0 0 1 11.55-2.6L20 12M4 12l2.85 5.6A7 7 0 0 0 18.4 15" /></>,
 };
 
 export function Icon({ name, size = 18, strokeWidth = 1.8 }: { name: IconName; size?: number; strokeWidth?: number }) {

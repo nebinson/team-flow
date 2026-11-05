@@ -14,6 +14,7 @@ For calls, set `CLOUDFLARE_TURN_KEY_ID` to the TURN key UID and `CLOUDFLARE_TURN
 - messages: conversation ID, sender ID, text body, type, and creation time.
 - call_logs: call ID, conversation and participants, caller/callee, audio/video type, outcome, and start/connect/end timestamps. Call signaling writes status transitions so the Calls tab can show history and connected-call duration.
 - refresh_tokens: SHA-256 hashes of rotating refresh tokens, user ID, and timestamps. Raw refresh tokens are returned only at sign-in/rotation and are not persisted in MongoDB.
+- ai_chats and ai_chat_messages: one private assistant thread per user and its persisted user/assistant turns. Restart permanently deletes that user's saved AI messages.
 
 ## Authentication endpoints
 
@@ -49,6 +50,9 @@ All endpoints require `Authorization: Bearer <access_token>`:
 - `GET /api/v1/calls/logs?limit=100` — list recent calls involving the signed-in user, including peer, direction, outcome, and duration when connected.
 - `WS /api/v1/ws` — authenticated workspace events for new conversations/messages, presence, read receipts, and typing. The browser sends `teamflow` and `bearer.<access-token>` as WebSocket subprotocols; the server accepts only `teamflow`.
 - `POST /api/v1/ai/conversations/{id}/summary` — summarize the most recent 150 messages for a conversation participant using the first available provider in NVIDIA NIM → Gemini → Ollama order.
+- `GET /api/v1/ai/chat` — return the signed-in user's private AI chat and up to 100 latest messages, creating the thread if needed.
+- `POST /api/v1/ai/chat/messages` with `{ "content" }` — generate and store a user/assistant turn (message limit 4,000 characters); the model receives up to the latest 30 saved messages.
+- `POST /api/v1/ai/chat/restart` — permanently delete the signed-in user's AI chat messages so future requests start without previous context.
 
 Conversation membership is checked for reads, writes, typing, and call-signaling events. One-to-one offers, answers, ICE candidates, and call termination are relayed to the other participant over the workspace WebSocket; audio/video media travels through WebRTC, using Cloudflare TURN when direct connectivity is blocked. Messages and read positions are stored in MongoDB. The current WebSocket fan-out and online-presence registry are in-process for local development; multi-worker deployment will need shared pub/sub and presence storage. Browsers require HTTPS (or localhost) for microphone and camera access, so cross-device development calls need an HTTPS frontend origin.
 
@@ -58,4 +62,4 @@ WebSocket call events also maintain the `call_logs` collection: offers create a 
 
 Message sends are scored by the trained Naive Bayes model in `ML/models/sentiment_naive_bayes.joblib`; labels are stored with the message and returned to the chat UI. Train/evaluate it with `uv run --project Backend python ML/train_sentiment.py`. If `SENTIMENT_MODEL_PATH` is unset, the backend loads the default artifact in `ML/models/`.
 
-Conversation summaries use the OpenAI-compatible chat-completions interface. Configure `NIM_API_KEY`, `NIM_MODEL`, and optionally `NIM_BASE_URL` for the primary hosted NVIDIA NIM provider. `GEMINI_API_KEY` + `GEMINI_MODEL` and `OLLAMA_BASE_URL` + `OLLAMA_MODEL` activate ordered fallbacks. Provider failures are logged by provider and the next configured provider is tried; summaries are generated on demand and are not saved to message history.
+Conversation summaries and private AI chat use the OpenAI-compatible chat-completions interface. Configure `NIM_API_KEY`, `NIM_MODEL`, and optionally `NIM_BASE_URL` for the primary hosted NVIDIA NIM provider. `GEMINI_API_KEY` + `GEMINI_MODEL` and `OLLAMA_BASE_URL` + `OLLAMA_MODEL` activate ordered fallbacks. Provider failures are logged by provider and the next configured provider is tried. Summary content is generated on demand and is not saved to message history; AI chat turns are stored in the user's private AI thread. AI prompts are sent to the selected provider for inference, subject to its data handling policy.
