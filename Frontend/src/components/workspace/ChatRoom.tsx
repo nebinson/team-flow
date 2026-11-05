@@ -62,7 +62,7 @@ function MessageRow({ message, previous }: { message: Message; previous?: Messag
     <div className="message-content">
       {showSender && <div className="message-meta"><strong>{message.sender}</strong><time>{message.time}</time></div>}
       <div className={`message-bubble ${message.own ? 'bubble-own' : ''}`}><p>{message.text}</p>{message.own && <span className={`message-read ${message.read ? 'receipt-read' : ''}`} aria-label={message.read ? 'Read' : 'Sent'}><Icon name="check" size={13} />{message.read && <Icon name="check" size={13} />}</span>}</div>
-      {!message.own && message.sentiment && <span className={`sentiment sentiment-${message.sentiment}`}><i />{message.sentiment}</span>}
+      {message.sentiment && <span className={`sentiment sentiment-${message.sentiment}`} aria-label={`Sentiment: ${message.sentiment}`}><i />{message.sentiment}</span>}
     </div>
   </div>;
 }

@@ -60,6 +60,7 @@ class MessageResponse(BaseModel):
     message_type: Literal["text"] = "text"
     created_at: datetime
     read: bool = False
+    sentiment: Literal["positive", "neutral", "negative"] | None = None
 
 
 class UserSearchResponse(BaseModel):

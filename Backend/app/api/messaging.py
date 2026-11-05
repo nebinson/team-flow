@@ -29,6 +29,7 @@ from app.schemas.messaging import (
     UserSummary,
 )
 from app.security import decode_access_token
+from app.services.sentiment import predict_sentiment, predict_sentiments
 from app.settings import settings
 
 router = APIRouter(tags=["messaging"])
@@ -195,6 +196,15 @@ def _serialize_messages(
     read_at: datetime | None = None,
     current_user_id: ObjectId | None = None,
 ) -> list[MessageResponse]:
+    missing = [message for message in messages if not message.get("sentiment")]
+    predictions = predict_sentiments([message.get("body", "") for message in missing])
+    for message, prediction in zip(missing, predictions):
+        if prediction:
+            message["sentiment"] = prediction
+            database.messages.update_one(
+                {"_id": message["_id"], "sentiment": {"$exists": False}},
+                {"$set": {"sentiment": prediction}},
+            )
     sender_ids = {message["sender_id"] for message in messages}
     senders = {
         user["_id"]: _user_summary(user)
@@ -213,6 +223,7 @@ def _serialize_messages(
                 and message["created_at"] <= read_at
                 and message["sender_id"] == current_user_id
             ),
+            sentiment=message.get("sentiment"),
         )
         for message in messages
         if message["sender_id"] in senders
@@ -394,6 +405,7 @@ def send_message(
     """Persist a text message, update the conversation preview, then fan it out."""
     conversation = _get_member_conversation(database, conversation_id, user["_id"])
     now = utc_now()
+    sentiment = predict_sentiment(payload.body)
     message: MessageDocument = {
         "conversation_id": conversation["_id"],
         "sender_id": user["_id"],
@@ -401,6 +413,8 @@ def send_message(
         "message_type": "text",
         "created_at": now,
     }
+    if sentiment:
+        message["sentiment"] = sentiment
     result = database.messages.insert_one(message)
     message["_id"] = result.inserted_id
     database.conversations.update_one(

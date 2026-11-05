@@ -21,6 +21,7 @@ export type ApiMessage = {
   message_type: 'text';
   created_at: string;
   read: boolean;
+  sentiment: 'positive' | 'neutral' | 'negative' | null;
 };
 
 export type ApiConversation = {
@@ -76,6 +77,7 @@ export function messageFromApi(message: ApiMessage, currentUserId: string): Mess
     time: formatTime(message.created_at),
     own: message.sender.id === currentUserId,
     read: message.read,
+    sentiment: message.sentiment ?? undefined,
   };
 }
 

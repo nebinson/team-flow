@@ -21,4 +21,5 @@ dist/
 # ML artifacts and notebooks
 *.joblib
 *.pkl
+!ML/models/sentiment_naive_bayes.joblib
 .ipynb_checkpoints/

@@ -1,0 +1,117 @@
+{
+  "algorithm": "Multinomial Naive Bayes",
+  "features": "TF-IDF word unigrams and bigrams",
+  "training_examples": 47615,
+  "test_examples": 12284,
+  "classes": [
+    "negative",
+    "neutral",
+    "positive"
+  ],
+  "validation": {
+    "accuracy": 0.6245,
+    "classification_report": {
+      "negative": {
+        "precision": 0.6386554621848739,
+        "recall": 0.24358974358974358,
+        "f1-score": 0.35266821345707655,
+        "support": 312.0
+      },
+      "neutral": {
+        "precision": 0.5950248756218905,
+        "recall": 0.6881472957422324,
+        "f1-score": 0.6382070437566703,
+        "support": 869.0
+      },
+      "positive": {
+        "precision": 0.656392694063927,
+        "recall": 0.702075702075702,
+        "f1-score": 0.6784660766961652,
+        "support": 819.0
+      },
+      "accuracy": 0.6245,
+      "macro avg": {
+        "precision": 0.6300243439568972,
+        "recall": 0.5446042471358927,
+        "f1-score": 0.5564471113033039,
+        "support": 2000.0
+      },
+      "weighted avg": {
+        "precision": 0.6269613687777298,
+        "recall": 0.6245,
+        "f1-score": 0.6101490602186568,
+        "support": 2000.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        76,
+        176,
+        60
+      ],
+      [
+        30,
+        598,
+        241
+      ],
+      [
+        13,
+        231,
+        575
+      ]
+    ]
+  },
+  "test": {
+    "accuracy": 0.5666720937805275,
+    "classification_report": {
+      "negative": {
+        "precision": 0.6760143198090692,
+        "recall": 0.2852467270896274,
+        "f1-score": 0.4012039660056657,
+        "support": 3972.0
+      },
+      "neutral": {
+        "precision": 0.5702972867713878,
+        "recall": 0.7399359946100724,
+        "f1-score": 0.6441348973607038,
+        "support": 5937.0
+      },
+      "positive": {
+        "precision": 0.4939759036144578,
+        "recall": 0.6042105263157894,
+        "f1-score": 0.5435606060606061,
+        "support": 2375.0
+      },
+      "accuracy": 0.5666720937805275,
+      "macro avg": {
+        "precision": 0.5800958367316382,
+        "recall": 0.5431310826718297,
+        "f1-score": 0.5296331564756586,
+        "support": 12284.0
+      },
+      "weighted avg": {
+        "precision": 0.5897245718762365,
+        "recall": 0.5666720937805275,
+        "f1-score": 0.5461386745358957,
+        "support": 12284.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        1133,
+        2432,
+        407
+      ],
+      [
+        481,
+        4393,
+        1063
+      ],
+      [
+        62,
+        878,
+        1435
+      ]
+    ]
+  }
+}

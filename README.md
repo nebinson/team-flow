@@ -31,4 +31,6 @@ Do not commit `.env` files or production credentials. Configure separate environ
 
 ## Current implementation status
 
-The backend has MongoDB user and email-verification document shapes, indexes, and email-code authentication routes. The frontend has modular auth, six-digit code-entry, and chat workspace screens; auth is wired to the API while chat remains prototype-driven. See [Backend/README.md](Backend/README.md) and [Frontend/README.md](Frontend/README.md) for details.
+Implemented: Resend-backed account verification, username/email login, rotating refresh sessions, MongoDB-backed direct messaging and message history, live presence/read/typing events, Cloudflare Realtime one-to-one WebRTC calling with call logs, Naive Bayes message sentiment, and on-demand AI summaries through NVIDIA NIM with Gemini and Ollama fallbacks. See [Backend/README.md](Backend/README.md), [Frontend/README.md](Frontend/README.md), and [ML/README.md](ML/README.md) for setup and module details.
+
+Not implemented yet: group chats/conferences, voice-message file transfer, production deployment configuration, LMS ZIP packaging, project report, and demo video.
