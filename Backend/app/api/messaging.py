@@ -29,33 +29,42 @@ router = APIRouter(tags=["messaging"])
 
 
 class ConversationConnectionManager:
-    """Keep development WebSockets by conversation and fan out saved messages."""
+    """Track signed-in users and fan out presence and chat events in-process."""
 
     def __init__(self) -> None:
         self.connections: dict[str, set[WebSocket]] = defaultdict(set)
         self.event_loop: asyncio.AbstractEventLoop | None = None
 
-    async def connect(self, conversation_id: str, websocket: WebSocket) -> None:
+    async def connect(self, user_id: str, websocket: WebSocket) -> bool:
         self.event_loop = asyncio.get_running_loop()
         await websocket.accept(subprotocol="teamflow")
-        self.connections[conversation_id].add(websocket)
+        was_offline = not self.connections[user_id]
+        self.connections[user_id].add(websocket)
+        return was_offline
 
-    def disconnect(self, conversation_id: str, websocket: WebSocket) -> None:
-        self.connections[conversation_id].discard(websocket)
-        if not self.connections[conversation_id]:
-            self.connections.pop(conversation_id, None)
+    def disconnect(self, user_id: str, websocket: WebSocket) -> bool:
+        self.connections[user_id].discard(websocket)
+        if not self.connections[user_id]:
+            self.connections.pop(user_id, None)
+            return True
+        return False
 
-    async def broadcast(self, conversation_id: str, event: dict) -> None:
-        for websocket in tuple(self.connections.get(conversation_id, ())):
+    def is_online(self, user_id: str) -> bool:
+        return bool(self.connections.get(user_id))
+
+    async def broadcast(self, user_ids: list[str], event: dict) -> None:
+        targets = {socket for user_id in user_ids for socket in self.connections.get(user_id, ())}
+        for websocket in targets:
             try:
                 await websocket.send_json(event)
             except (RuntimeError, WebSocketDisconnect):
-                self.disconnect(conversation_id, websocket)
+                for user_id in user_ids:
+                    self.disconnect(user_id, websocket)
 
-    def publish(self, conversation_id: str, event: dict) -> None:
+    def publish(self, user_ids: list[str], event: dict) -> None:
         loop = self.event_loop
         if loop is not None and loop.is_running():
-            asyncio.run_coroutine_threadsafe(self.broadcast(conversation_id, event), loop)
+            asyncio.run_coroutine_threadsafe(self.broadcast(user_ids, event), loop)
 
 
 connections = ConversationConnectionManager()
@@ -72,6 +81,8 @@ def _user_summary(user: dict) -> UserSummary:
         first_name=first_name,
         last_name=last_name,
         name=f"{first_name} {last_name}".strip(),
+        online=connections.is_online(str(user["_id"])),
+        last_seen_at=user.get("last_seen_at"),
     )
 
 
@@ -118,7 +129,12 @@ def _serialize_conversations(
     return serialized
 
 
-def _serialize_messages(database: Database, messages: list[dict]) -> list[MessageResponse]:
+def _serialize_messages(
+    database: Database,
+    messages: list[dict],
+    read_at: datetime | None = None,
+    current_user_id: ObjectId | None = None,
+) -> list[MessageResponse]:
     sender_ids = {message["sender_id"] for message in messages}
     senders = {
         user["_id"]: _user_summary(user)
@@ -132,6 +148,11 @@ def _serialize_messages(database: Database, messages: list[dict]) -> list[Messag
             body=message["body"],
             message_type=message.get("message_type", "text"),
             created_at=message["created_at"],
+            read=bool(
+                read_at
+                and message["created_at"] <= read_at
+                and message["sender_id"] == current_user_id
+            ),
         )
         for message in messages
         if message["sender_id"] in senders
@@ -218,6 +239,10 @@ def create_direct_conversation(
 
     if conversation is None:
         raise HTTPException(status_code=503, detail="Could not open the conversation.")
+    connections.publish(
+        [str(participant_id) for participant_id in conversation["participant_ids"]],
+        {"type": "conversation_changed"},
+    )
     return _serialize_conversations(database, [conversation])[0]
 
 
@@ -255,7 +280,17 @@ def list_messages(
         database.messages.find(criteria).sort("created_at", -1).limit(limit)
     )
     messages.reverse()
-    return _serialize_messages(database, messages)
+    other_user_ids = [
+        participant_id
+        for participant_id in conversation["participant_ids"]
+        if participant_id != user["_id"]
+    ]
+    read_markers = conversation.get("last_read_at") or {}
+    other_read_at = max(
+        (read_markers.get(str(participant_id)) for participant_id in other_user_ids if read_markers.get(str(participant_id))),
+        default=None,
+    )
+    return _serialize_messages(database, messages, other_read_at, user["_id"])
 
 
 @router.post(
@@ -296,15 +331,42 @@ def send_message(
     )
     response = _serialize_messages(database, [message])[0]
     connections.publish(
-        str(conversation["_id"]),
-        {"type": "message", "message": response.model_dump(mode="json")},
+        [str(participant_id) for participant_id in conversation["participant_ids"]],
+        {
+            "type": "message",
+            "conversation_id": str(conversation["_id"]),
+            "message": response.model_dump(mode="json"),
+        },
     )
     return response
 
 
-@router.websocket("/ws/conversations/{conversation_id}")
-async def conversation_socket(websocket: WebSocket, conversation_id: str) -> None:
-    """Authenticate using a WebSocket subprotocol and stream new messages."""
+@router.post("/conversations/{conversation_id}/read", status_code=status.HTTP_204_NO_CONTENT)
+def mark_conversation_read(
+    conversation_id: str,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> None:
+    """Record that the current user has read through the latest message."""
+    conversation = _get_member_conversation(database, conversation_id, user["_id"])
+    read_at = utc_now()
+    database.conversations.update_one(
+        {"_id": conversation["_id"]},
+        {"$set": {f"last_read_at.{user['_id']}": read_at}},
+    )
+    connections.publish(
+        [str(participant_id) for participant_id in conversation["participant_ids"]],
+        {"type": "read", "conversation_id": conversation_id, "user_id": str(user["_id"]), "read_at": read_at.isoformat()},
+    )
+
+
+def _verified_user_ids(database: Database) -> list[str]:
+    return [str(record["_id"]) for record in database.users.find({"email_verified": True}, {"_id": 1})]
+
+
+@router.websocket("/ws")
+async def workspace_socket(websocket: WebSocket) -> None:
+    """Authenticate one workspace connection for chat, typing, and presence events."""
     protocol_items = websocket.headers.get("sec-websocket-protocol", "").split(",")
     protocols = [item.strip() for item in protocol_items]
     bearer = next(
@@ -319,24 +381,53 @@ async def conversation_socket(websocket: WebSocket, conversation_id: str) -> Non
 
     try:
         user_id = ObjectId(subject)
-        conversation_object_id = ObjectId(conversation_id)
     except (TypeError, ValueError):
         await websocket.close(code=1008)
         return
 
-    is_member = database.conversations.find_one(
-        {"_id": conversation_object_id, "participant_ids": user_id}, {"_id": 1}
-    )
-    if is_member is None:
+    user = database.users.find_one({"_id": user_id, "email_verified": True})
+    if user is None:
         await websocket.close(code=1008)
         return
 
-    room_id = str(conversation_object_id)
-    await connections.connect(room_id, websocket)
+    was_offline = await connections.connect(str(user_id), websocket)
+    if was_offline:
+        connections.publish(
+            _verified_user_ids(database),
+            {"type": "presence", "user_id": str(user_id), "online": True, "last_seen_at": None},
+        )
     try:
         while True:
             event = await websocket.receive_json()
-            if isinstance(event, dict) and event.get("type") == "ping":
+            if not isinstance(event, dict):
+                continue
+            if event.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
+                continue
+
+            conversation_id = event.get("conversation_id")
+            if event.get("type") not in {"typing", "stop_typing"} or not isinstance(conversation_id, str):
+                continue
+            try:
+                conversation_object_id = ObjectId(conversation_id)
+            except (TypeError, ValueError):
+                continue
+            conversation = database.conversations.find_one(
+                {"_id": conversation_object_id, "participant_ids": user_id}
+            )
+            if conversation is None:
+                continue
+            peers = [str(item) for item in conversation["participant_ids"] if item != user_id]
+            connections.publish(
+                peers,
+                {"type": event["type"], "conversation_id": conversation_id, "user_id": str(user_id)},
+            )
     except WebSocketDisconnect:
-        connections.disconnect(room_id, websocket)
+        went_offline = connections.disconnect(str(user_id), websocket)
+        if went_offline:
+            last_seen_at = utc_now()
+            database.users.update_one({"_id": user_id}, {"$set": {"last_seen_at": last_seen_at}})
+            connections.publish(
+                _verified_user_ids(database),
+                {"type": "presence", "user_id": str(user_id), "online": False, "last_seen_at": last_seen_at.isoformat()},
+            )

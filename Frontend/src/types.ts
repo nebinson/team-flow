@@ -6,6 +6,7 @@ export type Message = {
   text: string;
   time: string;
   own?: boolean;
+  read?: boolean;
   sentiment?: 'positive' | 'neutral' | 'negative';
   attachment?: string;
 };
@@ -16,6 +17,8 @@ export type Conversation = {
   color: string;
   role: string;
   online: boolean;
+  lastSeenAt?: string | null;
+  participantId?: string;
   time: string;
   unread?: number;
   pinned?: boolean;

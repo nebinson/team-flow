@@ -44,27 +44,30 @@ class LoginRequest(BaseModel):
         return normalized if "@" in normalized else normalized.removeprefix("@")
 
 
-class EmailRequest(BaseModel):
-    email: EmailStr
+class IdentifierRequest(BaseModel):
+    identifier: str = Field(min_length=1, max_length=320)
 
-    @field_validator("email")
+    @field_validator("identifier")
     @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        return str(value).strip().casefold()
+    def normalize_identifier(cls, value: str) -> str:
+        normalized = str(value).strip().casefold()
+        return normalized if "@" in normalized else normalized.removeprefix("@")
 
 
 class VerifyEmailRequest(BaseModel):
-    email: EmailStr
+    identifier: str = Field(min_length=1, max_length=320)
     code: str = Field(pattern=r"^[0-9]{6}$")
 
-    @field_validator("email")
+    @field_validator("identifier")
     @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        return str(value).strip().casefold()
+    def normalize_identifier(cls, value: str) -> str:
+        normalized = str(value).strip().casefold()
+        return normalized if "@" in normalized else normalized.removeprefix("@")
 
 
 class AuthMessage(BaseModel):
     message: str
+    email_hint: str | None = None
 
 
 class AccessTokenResponse(BaseModel):

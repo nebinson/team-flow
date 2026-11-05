@@ -15,7 +15,6 @@ type Props = {
   theme: Theme;
   currentUserName: string;
   accessToken: string;
-  isDemo: boolean;
   onCreateConversation: (username: string) => Promise<void>;
   onToggleTheme: () => void;
   onSignOut: () => void;
@@ -31,6 +30,8 @@ type Props = {
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: (event?: FormEvent) => void;
+  onTyping: (typing: boolean) => void;
+  typingName?: string;
   detailsOpen: boolean;
   onToggleDetails: () => void;
   callKind: '' | 'audio' | 'video';
@@ -39,7 +40,7 @@ type Props = {
   toast: string;
 };
 
-export function Workspace({ theme, currentUserName, accessToken, isDemo, onCreateConversation, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, detailsOpen, onToggleDetails, callKind, onCall, onCloseCall, toast }: Props) {
+export function Workspace({ theme, currentUserName, accessToken, onCreateConversation, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, callKind, onCall, onCloseCall, toast }: Props) {
   const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('chat');
   const conversation = conversations.find((item) => item.id === activeId) ?? conversations[0];
   const messages = conversation ? messagesByConversation[conversation.id] ?? conversation.messages : [];
@@ -49,7 +50,7 @@ export function Workspace({ theme, currentUserName, accessToken, isDemo, onCreat
     setMobilePanel('chat');
   }
   function startConversation() {
-    if (isDemo || !accessToken) {
+    if (!accessToken) {
       onToast('Sign in to start a conversation with a teammate.');
       return;
     }
@@ -63,7 +64,7 @@ export function Workspace({ theme, currentUserName, accessToken, isDemo, onCreat
   return <div className={`app-shell mobile-${mobilePanel}-active`}>
     <SidebarRail theme={theme} currentUserName={currentUserName} onToggleTheme={onToggleTheme} onToast={onToast} onSignOut={onSignOut} />
     <ConversationList conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelect={selectConversation} query={query} onQueryChange={onQueryChange} filter={filter} onFilterChange={onFilterChange} onToast={onToast} onNewConversation={startConversation} />
-    {conversation ? <ChatRoom conversation={conversation} messages={messages} detailsOpen={detailsOpen} draft={draft} onDraftChange={onDraftChange} onSend={onSend} onCall={onCall} onToggleDetails={onToggleDetails} onToast={onToast} onBackToList={() => setMobilePanel('list')} /> : <EmptyConversation onNewConversation={startConversation} />}
+    {conversation ? <ChatRoom conversation={conversation} messages={messages} detailsOpen={detailsOpen} draft={draft} onDraftChange={onDraftChange} onTyping={onTyping} typingName={typingName} onSend={onSend} onCall={onCall} onToggleDetails={onToggleDetails} onToast={onToast} onBackToList={() => setMobilePanel('list')} /> : <EmptyConversation onNewConversation={startConversation} />}
     {detailsOpen && conversation && <DetailsPanel conversation={conversation} onClose={onToggleDetails} onCall={onCall} onToast={onToast} />}
     {callKind && conversation && <CallOverlay kind={callKind} conversation={conversation} onClose={onCloseCall} onToast={onToast} />}
     {newConversationOpen && accessToken && <NewConversationDialog token={accessToken} onClose={() => setNewConversationOpen(false)} onCreate={createConversation} />}

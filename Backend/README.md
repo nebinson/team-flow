@@ -2,23 +2,23 @@
 
 FastAPI service using MongoDB Atlas. Install dependencies from this directory with uv sync, then start the development server with uv run uvicorn app.main:app --reload.
 
-Copy .env.example to .env and set MONGODB_URI, a random JWT_SECRET of at least 32 characters, RESEND_API_KEY, and a verified EMAIL_FROM sender before using account endpoints. The API can start without those services configured; protected workflows return a configuration error until required settings are present.
+Copy .env.example to .env and set MONGODB_URI, a random JWT_SECRET of at least 32 characters, RESEND_API_KEY, and a verified EMAIL_FROM sender before using account endpoints. Set FRONTEND_ORIGIN to the exact browser origin, including scheme and port (for example, `http://botpeter17:5173`). The API can start without services configured; protected workflows return a configuration error until required settings are present.
 
 ## MongoDB collections
 
-- users: normalized unique email and username, first/last name, gender preference, Argon2 password hash, verification state, and timestamps. Username uniqueness is partial so existing accounts without usernames remain readable.
+- users: normalized unique email and username, first/last name, gender preference, Argon2 password hash, verification state, last-seen time, and timestamps. Username uniqueness is partial so existing accounts without usernames remain readable.
 - email_verifications: one HMAC-hashed, six-digit code per unverified user, with expiry, resend timestamp, and a five-attempt limit. MongoDB TTL removes expired records.
-- conversations: one-to-one participant IDs, a deterministic unique direct-chat key, activity time, and a last-message preview.
+- conversations: one-to-one participant IDs, a deterministic unique direct-chat key, per-member read timestamps, activity time, and a last-message preview.
 - messages: conversation ID, sender ID, text body, type, and creation time.
 
 ## Authentication endpoints
 
 All routes are under /api/v1/auth:
 
-- POST /register — { "name", "email", "password" }; creates an unverified account and emails a six-digit code through Resend.
-- POST /resend-verification — { "email" }; emails a replacement code when eligible, with an atomic per-account cooldown.
-- POST /verify-email — { "email", "code" }; verifies the account using its current unexpired code. Five invalid codes exhaust the current code; resend after the cooldown to continue.
-- POST /login — { "email", "password" }; returns a short-lived bearer access token after verification.
+- POST /register — { "first_name", "last_name", "username", "email", "gender", "password" }; creates an unverified account and emails a six-digit code through Resend.
+- POST /resend-verification — { "identifier" }; emails a replacement code by username or email when eligible, with an atomic per-account cooldown.
+- POST /verify-email — { "identifier", "code" }; verifies the account using its current unexpired code. Five invalid codes exhaust the current code; resend after the cooldown to continue.
+- POST /login — { "identifier", "password" }; accepts a username or email and returns a short-lived bearer access token after verification. Unverified accounts return a masked email hint so the client can offer verification.
 - GET /me — returns the authenticated user's public profile; send Authorization: Bearer <access_token>.
 
 Registration and resend responses are generic to avoid exposing whether an email address has an account. The six-digit code expires after ten minutes; five invalid attempts require requesting a new code.
@@ -36,6 +36,7 @@ All endpoints require `Authorization: Bearer <access_token>`:
 - `GET /api/v1/conversations` — list threads for the signed-in user, newest activity first.
 - `GET /api/v1/conversations/{id}/messages?limit=50&before=...` — load a history page; limit is 1–100.
 - `POST /api/v1/conversations/{id}/messages` with `{ "body" }` — persist and return a text message (up to 4,000 characters).
-- `WS /api/v1/ws/conversations/{id}` — receive new message events. The browser sends `teamflow` and `bearer.<access-token>` as WebSocket subprotocols; the server accepts only `teamflow`.
+- `POST /api/v1/conversations/{id}/read` — save the member's read position and notify the other participant.
+- `WS /api/v1/ws` — authenticated workspace events for new conversations/messages, presence, read receipts, and typing. The browser sends `teamflow` and `bearer.<access-token>` as WebSocket subprotocols; the server accepts only `teamflow`.
 
-Conversation membership is checked for reads, writes, and sockets. Messages are saved before being broadcast. The current WebSocket fan-out is in-process for local development; multi-worker deployment will need a shared pub/sub layer.
+Conversation membership is checked for reads, writes, and typing events. Messages and read positions are stored in MongoDB. The current WebSocket fan-out and online-presence registry are in-process for local development; multi-worker deployment will need shared pub/sub and presence storage.

@@ -9,6 +9,8 @@ export type UserSummary = {
   first_name: string;
   last_name: string;
   name: string;
+  online: boolean;
+  last_seen_at: string | null;
 };
 
 export type ApiMessage = {
@@ -18,6 +20,7 @@ export type ApiMessage = {
   body: string;
   message_type: 'text';
   created_at: string;
+  read: boolean;
 };
 
 export type ApiConversation = {
@@ -54,8 +57,10 @@ export function conversationFromApi(conversation: ApiConversation, currentUserId
     name,
     initials,
     color: colorForId(other?.id ?? conversation.id),
-    role: conversation.type === 'group' ? `${conversation.participants.length} members` : `@${other?.username ?? ''}`,
-    online: false,
+    role: conversation.type === 'group' ? `${conversation.participants.length} members` : (other?.username ? `@${other.username}` : ''),
+    online: other?.online ?? false,
+    participantId: other?.id,
+    lastSeenAt: other?.last_seen_at,
     time: preview ? formatTime(preview.created_at) : formatTime(conversation.updated_at),
     group: conversation.type === 'group',
     lastMessage: preview ? `${preview.sender.id === currentUserId ? 'You: ' : ''}${preview.body}` : 'Start the conversation',
@@ -70,6 +75,7 @@ export function messageFromApi(message: ApiMessage, currentUserId: string): Mess
     text: message.body,
     time: formatTime(message.created_at),
     own: message.sender.id === currentUserId,
+    read: message.read,
   };
 }
 
@@ -80,19 +86,21 @@ export const messagingApi = {
     apiRequest<ApiMessage[]>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {}, token),
   sendMessage: (token: string, conversationId: string, body: string) =>
     apiRequest<ApiMessage>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', body: JSON.stringify({ body }) }, token),
+  markRead: (token: string, conversationId: string) =>
+    apiRequest<void>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/read`, { method: 'POST' }, token),
   searchUsers: (token: string, query: string) =>
     apiRequest<{ users: UserSummary[] }>(`/api/v1/users/search?q=${encodeURIComponent(query)}`, {}, token),
   createDirectConversation: (token: string, username: string) =>
     apiRequest<ApiConversation>('/api/v1/conversations/direct', { method: 'POST', body: JSON.stringify({ username }) }, token),
-  connectConversation(token: string, conversationId: string, onMessage: (message: ApiMessage) => void) {
+  connectWorkspace(token: string, onEvent: (event: Record<string, unknown>) => void) {
     const base = new URL(apiBaseUrl);
     const protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${base.host}/api/v1/ws/conversations/${encodeURIComponent(conversationId)}`;
+    const url = `${protocol}//${base.host}/api/v1/ws`;
     const socket = new WebSocket(url, ['teamflow', `bearer.${token}`]);
     socket.onmessage = (event) => {
       try {
-        const incoming = JSON.parse(event.data) as { type?: string; message?: ApiMessage };
-        if (incoming.type === 'message' && incoming.message) onMessage(incoming.message);
+        const incoming = JSON.parse(event.data) as Record<string, unknown>;
+        onEvent(incoming);
       } catch {
         // Ignore malformed frames and keep the connection available for valid events.
       }

@@ -19,7 +19,7 @@ from app.models.documents import UserDocument
 from app.schemas.auth import (
     AccessTokenResponse,
     AuthMessage,
-    EmailRequest,
+    IdentifierRequest,
     LoginRequest,
     RegisterRequest,
     UserResponse,
@@ -44,6 +44,11 @@ _bearer = HTTPBearer(auto_error=False)
 _REGISTRATION_MESSAGE = (
     "If this address can be registered, a verification email will be sent."
 )
+
+
+def _mask_email(address: str) -> str:
+    local_part, domain = address.split("@", 1)
+    return f"{local_part[:1]}{'*' * max(2, len(local_part) - 1)}@{domain}"
 
 
 def _require_auth_configuration(*, email: bool = False) -> None:
@@ -147,11 +152,12 @@ def register(payload: RegisterRequest, database: Database = Depends(get_database
     status_code=status.HTTP_202_ACCEPTED,
 )
 def resend_verification(
-    payload: EmailRequest, database: Database = Depends(get_database)
+    payload: IdentifierRequest, database: Database = Depends(get_database)
 ) -> AuthMessage:
     """Request another code; the service enforces a per-account cooldown."""
     _require_auth_configuration(email=True)
-    user = database.users.find_one({"email": payload.email})
+    lookup = {"email": payload.identifier} if "@" in payload.identifier else {"username": payload.identifier}
+    user = database.users.find_one(lookup)
     if user and not user.get("email_verified", False):
         _send_verification(database, user)
     return AuthMessage(message=_REGISTRATION_MESSAGE)
@@ -163,7 +169,8 @@ def verify_email(
 ) -> AuthMessage:
     """Consume a valid email/code pair while atomically incrementing attempts."""
     code_hash = hash_email_verification_code(payload.code)
-    user = database.users.find_one({"email": payload.email, "email_verified": False})
+    lookup = {"email": payload.identifier} if "@" in payload.identifier else {"username": payload.identifier}
+    user = database.users.find_one({**lookup, "email_verified": False})
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -234,7 +241,11 @@ def login(
     if not user.get("email_verified", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Verify your email before signing in.",
+            detail={
+                "code": "email_unverified",
+                "message": "This account's email is not verified.",
+                "email_hint": _mask_email(user["email"]),
+            },
         )
 
     token = create_access_token(str(user["_id"]))

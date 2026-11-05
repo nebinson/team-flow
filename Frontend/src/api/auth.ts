@@ -22,10 +22,10 @@ export type AccessToken = {
 export const authApi = {
   register: (input: { first_name: string; last_name: string; username: string; email: string; gender: string; password: string }) =>
     apiRequest<{ message: string }>('/api/v1/auth/register', { method: 'POST', body: JSON.stringify(input) }),
-  resendCode: (email: string) =>
-    apiRequest<{ message: string }>('/api/v1/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
-  verifyCode: (email: string, code: string) =>
-    apiRequest<{ message: string }>('/api/v1/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code }) }),
+  resendCode: (identifier: string) =>
+    apiRequest<{ message: string }>('/api/v1/auth/resend-verification', { method: 'POST', body: JSON.stringify({ identifier }) }),
+  verifyCode: (identifier: string, code: string) =>
+    apiRequest<{ message: string }>('/api/v1/auth/verify-email', { method: 'POST', body: JSON.stringify({ identifier, code }) }),
   login: (identifier: string, password: string) =>
     apiRequest<AccessToken>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ identifier, password }) }),
   currentUser: (token: string) =>

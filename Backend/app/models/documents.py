@@ -28,6 +28,7 @@ class ConversationDocument(TypedDict):
     created_at: datetime
     updated_at: datetime
     last_message: dict | None
+    last_read_at: NotRequired[dict[str, datetime]]
 
 
 class MessageDocument(TypedDict):

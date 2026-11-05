@@ -27,7 +27,7 @@ export function ConversationList({ conversations, messagesByConversation, active
   return <aside className="conversation-sidebar">
     <div className="sidebar-heading"><div><span className="workspace-label">YOUR WORKSPACE</span><h1>Messages <span className="heading-caret"><Icon name="chevron" size={15} /></span></h1></div><button className="icon-button create-button" aria-label="Start a new conversation" onClick={onNewConversation}><Icon name="plus" size={18} /></button></div>
     <label className="search-box"><Icon name="search" size={17} /><input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search messages" /><kbd>⌘ K</kbd></label>
-    <div className="filter-tabs"><button className={filter === 'all' ? 'filter-active' : ''} onClick={() => onFilterChange('all')}>All <span>12</span></button><button className={filter === 'unread' ? 'filter-active' : ''} onClick={() => onFilterChange('unread')}>Unread</button><button className="filter-more" aria-label="More filters" onClick={() => onToast('More filters will be available soon.')}><Icon name="more" size={18} /></button></div>
+    <div className="filter-tabs"><button className={filter === 'all' ? 'filter-active' : ''} onClick={() => onFilterChange('all')}>All</button><button className={filter === 'unread' ? 'filter-active' : ''} onClick={() => onFilterChange('unread')}>Unread</button><button className="filter-more" aria-label="More filters" onClick={() => onToast('More filters will be available soon.')}><Icon name="more" size={18} /></button></div>
     <div className="conversation-list">
       {visible.map((conversation) => {
         const lastMessage = (messagesByConversation[conversation.id] ?? conversation.messages).at(-1);
@@ -39,7 +39,7 @@ export function ConversationList({ conversations, messagesByConversation, active
       })}
       {visible.length === 0 && <div className="empty-search"><span className="empty-search-icon"><Icon name={query ? 'search' : 'chat'} /></span><strong>{query ? 'No conversations found' : 'No conversations yet'}</strong><span>{query ? 'Try another name or keyword.' : 'Start with someone on your team.'}</span>{!query && <button className="text-button" onClick={onNewConversation}>Start a conversation</button>}</div>}
     </div>
-    <div className="sidebar-bottom"><div className="online-indicator"><span /> 12 teammates online</div><button className="sidebar-invite" onClick={() => onToast('Invite links will be available soon.')}><span className="invite-plus"><Icon name="plus" size={14} /></span> Invite teammates</button></div>
+    <div className="sidebar-bottom"><span className="sidebar-sync"><i /> Messages sync in real time</span></div>
   </aside>;
 }
 

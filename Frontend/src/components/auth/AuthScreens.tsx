@@ -1,7 +1,6 @@
 /** Username/email sign-in, profile registration, and six-digit email verification screens. */
 
 import React, { FormEvent, KeyboardEvent, useRef } from 'react';
-import { Avatar } from '../Avatar';
 import { Brand } from '../Brand';
 import { Icon } from '../Icon';
 import type { Theme } from '../../types';
@@ -25,7 +24,10 @@ type AuthScreenProps = {
   password: string;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onPreview: () => void;
+  onVerifyNow: () => void;
+  onDismissVerify: () => void;
+  verifyPromptOpen: boolean;
+  verificationEmailHint: string;
   onToggleTheme: () => void;
   onNotify: (message: string) => void;
   theme: Theme;
@@ -33,7 +35,7 @@ type AuthScreenProps = {
   submitting: boolean;
 };
 
-export function AuthScreen({ mode, onModeChange, identifier, onIdentifierChange, email, onEmailChange, username, onUsernameChange, firstName, onFirstNameChange, lastName, onLastNameChange, gender, onGenderChange, password, onPasswordChange, onSubmit, onPreview, onToggleTheme, onNotify, theme, error, submitting }: AuthScreenProps) {
+export function AuthScreen({ mode, onModeChange, identifier, onIdentifierChange, email, onEmailChange, username, onUsernameChange, firstName, onFirstNameChange, lastName, onLastNameChange, gender, onGenderChange, password, onPasswordChange, onSubmit, onVerifyNow, onDismissVerify, verifyPromptOpen, verificationEmailHint, onToggleTheme, onNotify, theme, error, submitting }: AuthScreenProps) {
   return <div className="auth-shell">
     <aside className="auth-story">
       <div className="auth-story-top"><Brand /><button className="theme-button story-theme" onClick={onToggleTheme} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}><Icon name={theme === 'light' ? 'moon' : 'sun'} /></button></div>
@@ -41,11 +43,7 @@ export function AuthScreen({ mode, onModeChange, identifier, onIdentifierChange,
         <div className="story-kicker"><span className="kicker-line" /> A calmer way to work together</div>
         <h1>Good work<br />happens <em>together.</em></h1>
         <p>Thoughtful conversations keep great teams moving. Bring your people, plans, and progress into one clear space.</p>
-        <div className="preview-stack" aria-hidden="true">
-          <div className="preview-chat preview-chat-main"><Avatar initials="AR" color="peach" size="sm" /><div><strong>Ananya Rao</strong><span>The revised layout is ready ✨</span></div><i className="preview-check"><Icon name="check" size={12} /></i></div>
-          <div className="preview-chat preview-chat-back"><span className="preview-mini-avatars"><b>A</b><b>K</b><b>R</b></span><div><strong>Design & site team</strong><span>8 people · 3 online</span></div><span className="preview-unread">3</span></div>
-          <div className="orbit orbit-one" /><div className="orbit orbit-two" /><span className="sparkle sparkle-one">✳</span><span className="sparkle sparkle-two">✦</span>
-        </div>
+        <div className="auth-visual" aria-hidden="true"><span className="auth-visual-orbit" /><span className="auth-visual-orbit orbit-inner" /><span className="auth-visual-core"><Icon name="chat" size={32} /></span><span className="auth-visual-spark">✦</span></div>
       </div>
       <div className="auth-story-footer"><span>Made for teams who care about the details.</span><span className="footer-dot" /><span>TeamFlow · 2026</span></div>
     </aside>
@@ -69,12 +67,11 @@ export function AuthScreen({ mode, onModeChange, identifier, onIdentifierChange,
           <button className="primary-button auth-submit" type="submit" disabled={submitting}>{submitting ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}<Icon name="arrow" size={16} /></button>
         </form>
         <div className="auth-switch">{mode === 'login' ? 'New user?' : 'Already have an account?'} <button className="text-button" onClick={() => onModeChange(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Register now' : 'Sign in'}</button></div>
-        <div className="auth-divider"><span /> or <span /></div>
-        <button className="demo-button" onClick={onPreview}><span className="demo-glyph">✦</span>Explore the workspace preview</button>
         <p className="privacy-note">By continuing, you agree to your organization’s communication policies.</p>
       </section>
       <div className="auth-panel-footer"><span>Need a hand?</span><button className="text-button" onClick={() => onNotify('Contact your workspace administrator for help.')}>Contact your workspace admin</button><span className="secure-note"><span className="secure-dot" /> Secure workspace</span></div>
     </main>
+    {verifyPromptOpen && <div className="dialog-scrim" role="presentation"><section className="new-conversation-dialog verify-prompt" role="dialog" aria-modal="true" aria-labelledby="verify-prompt-title"><header className="dialog-header"><div><span className="workspace-label">EMAIL VERIFICATION</span><h2 id="verify-prompt-title">Verify your email?</h2></div><button className="icon-button" aria-label="Close" onClick={onDismissVerify}><Icon name="close" /></button></header><p className="verify-prompt-copy">This account still needs email verification. Send a sign-in code to <strong>{verificationEmailHint}</strong>?</p><footer className="dialog-footer"><button className="text-button" onClick={onDismissVerify}>Not now</button><button className="primary-button" onClick={onVerifyNow} disabled={submitting}>{submitting ? 'Sending…' : 'Send code and verify'} <Icon name="arrow" size={15} /></button></footer></section></div>}
   </div>;
 }
 
@@ -87,23 +84,29 @@ type VerificationScreenProps = {
   onToggleTheme: () => void;
   onBack: () => void;
   onDigitChange: (index: number, value: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onComplete: (code: string) => void;
+  status: 'idle' | 'success';
   onResend: () => void;
   submitting: boolean;
 };
 
-export function VerificationScreen({ email, digits, error, resendSeconds, theme, onToggleTheme, onBack, onDigitChange, onSubmit, onResend, submitting }: VerificationScreenProps) {
+export function VerificationScreen({ email, digits, error, resendSeconds, theme, onToggleTheme, onBack, onDigitChange, onComplete, status, onResend, submitting }: VerificationScreenProps) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   function updateDigit(index: number, value: string) {
     const onlyDigits = value.replace(/\D/g, '');
     if (onlyDigits.length > 1) {
-      onlyDigits.slice(0, 6).split('').forEach((digit, slot) => onDigitChange(slot, digit));
-      inputRefs.current[Math.min(onlyDigits.length, 6) - 1]?.focus();
+      const pasted = onlyDigits.slice(0, 6).split('');
+      pasted.forEach((digit, slot) => onDigitChange(slot, digit));
+      inputRefs.current[Math.min(pasted.length, 6) - 1]?.focus();
+      if (pasted.length === 6) onComplete(pasted.join(''));
       return;
     }
     onDigitChange(index, onlyDigits);
     if (onlyDigits && index < 5) inputRefs.current[index + 1]?.focus();
+    const next = digits.slice();
+    next[index] = onlyDigits;
+    if (next.every(Boolean)) onComplete(next.join(''));
   }
 
   function moveFocus(event: KeyboardEvent<HTMLInputElement>, index: number) {
@@ -120,14 +123,13 @@ export function VerificationScreen({ email, digits, error, resendSeconds, theme,
       <span className="auth-overline">ONE LAST STEP</span>
       <h1>Check your inbox</h1>
       <p className="verify-copy">We sent a sign-in code to<br /><strong>{email || 'your work email'}</strong></p>
-      <form onSubmit={onSubmit} className="otp-form">
+      <div className="otp-form">
         <div className="otp-label-row"><label htmlFor="otp-0">Enter your 6-digit code</label><span>EMAIL CODE</span></div>
         <div className="otp-inputs" role="group" aria-label="6-digit verification code">
-          {digits.map((digit, index) => <input key={index} ref={(element) => { inputRefs.current[index] = element; }} id={`otp-${index}`} aria-label={`Code digit ${index + 1}`} className={error ? 'otp-invalid' : ''} type="text" inputMode="numeric" autoComplete={index === 0 ? 'one-time-code' : 'off'} maxLength={index === 0 ? 6 : 1} value={digit} onChange={(event) => updateDigit(index, event.target.value)} onKeyDown={(event) => moveFocus(event, index)} />)}
+          {digits.map((digit, index) => <input key={index} ref={(element) => { inputRefs.current[index] = element; }} id={`otp-${index}`} aria-label={`Code digit ${index + 1}`} className={error ? 'otp-invalid' : status === 'success' ? 'otp-valid' : ''} type="text" inputMode="numeric" autoComplete={index === 0 ? 'one-time-code' : 'off'} maxLength={index === 0 ? 6 : 1} value={digit} disabled={submitting || status === 'success'} onChange={(event) => updateDigit(index, event.target.value)} onKeyDown={(event) => moveFocus(event, index)} />)}
         </div>
-        {error ? <p className="otp-error">{error}</p> : <p className="otp-hint">The code expires in 10 minutes. Keep this window open.</p>}
-        <button className="primary-button verify-submit" type="submit" disabled={submitting}>{submitting ? 'Verifying…' : 'Verify email'} <Icon name="arrow" size={16} /></button>
-      </form>
+        {error ? <p className="otp-error">{error}</p> : status === 'success' ? <p className="otp-success">Code accepted. Opening your chats…</p> : <p className="otp-hint">{submitting ? 'Checking your code…' : 'The code expires in 10 minutes. Keep this window open.'}</p>}
+      </div>
       <div className="resend-row">Didn’t receive it? {resendSeconds > 0 ? <span>Resend in <b>0:{String(resendSeconds).padStart(2, '0')}</b></span> : <button className="text-button" disabled={submitting} onClick={onResend}>Send a new code</button>}</div>
       <div className="verify-help"><span className="help-icon"><Icon name="info" size={15} /></span><p>Check your spam folder, or make sure <strong>{email || 'your email address'}</strong> is correct.</p></div>
     </main>

@@ -12,6 +12,8 @@ class UserSummary(BaseModel):
     first_name: str
     last_name: str
     name: str
+    online: bool = False
+    last_seen_at: datetime | None = None
 
 
 class LastMessageSummary(BaseModel):
@@ -57,6 +59,7 @@ class MessageResponse(BaseModel):
     body: str
     message_type: Literal["text"] = "text"
     created_at: datetime
+    read: bool = False
 
 
 class UserSearchResponse(BaseModel):
