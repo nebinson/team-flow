@@ -58,6 +58,8 @@ def get_call_ice_servers(user: dict = Depends(get_current_user)) -> dict:
         headers={
             "Authorization": f"Bearer {settings.cloudflare_turn_key_token}",
             "Content-Type": "application/json",
+            # Cloudflare returns 1010 for urllib's default Python-urllib User-Agent.
+            "User-Agent": "TeamFlow-Backend/0.1",
         },
         method="POST",
     )
@@ -65,10 +67,17 @@ def get_call_ice_servers(user: dict = Depends(get_current_user)) -> dict:
         with urlopen(request, timeout=8) as response:
             payload = json.loads(response.read())
     except HTTPError as exc:
-        logger.warning("Cloudflare TURN credential generation rejected the request (HTTP %s).", exc.code)
+        body = exc.read(512).decode("utf-8", "replace")
+        provider_error = re.search(r"error code:\s*(\d+)", body, re.IGNORECASE)
+        provider_code = f", Cloudflare error {provider_error.group(1)}" if provider_error else ""
+        logger.warning(
+            "Cloudflare TURN credential generation rejected the request (HTTP %s%s).",
+            exc.code,
+            provider_code,
+        )
         raise HTTPException(
             status_code=502,
-            detail=f"Cloudflare rejected the configured TURN key (HTTP {exc.code}). Check that the key UID and key secret belong together.",
+            detail=f"Cloudflare denied TURN credential generation (HTTP {exc.code}{provider_code}).",
         ) from exc
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         logger.warning("Could not complete the Cloudflare TURN credential request (%s).", type(exc).__name__)
