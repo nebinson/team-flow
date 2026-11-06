@@ -12,7 +12,7 @@ React + Vite + TypeScript client. Copy `.env.example` to `.env`, then run `npm i
 - `src/api/messaging.ts` contains conversation, history, send, directory-search, and WebSocket calls plus API-to-UI adapters.
 - `src/api/calls.ts` requests authenticated, short-lived ICE credentials and persisted call history from the backend.
 - `src/api/ai.ts` requests provider-generated conversation summaries.
-- `src/components/workspace/AiChatRoom.tsx` renders the persisted private AI chat, provider attribution, and confirmed history reset.
+- `src/components/workspace/AiChatRoom.tsx` renders the persisted private AI chat, provider attribution, and confirmed history reset. Assistant replies support GitHub Flavored Markdown (including fenced code, tables, and task lists); user messages remain plain text. Markdown is sanitized before rendering and raw HTML is not enabled.
 - `src/hooks/useWebRtcCall.ts` owns peer connections, media tracks, signaling, and call controls.
 - `src/style.css` contains shared design tokens, component styles, responsive layouts, and light/dark themes.
 

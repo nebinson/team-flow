@@ -37,6 +37,6 @@ Configure these GitHub Actions repository secrets: `VPS_HOST`, `VPS_USER`, `SSH_
 
 ## Current implementation status
 
-Implemented: Resend-backed account verification, username/email login, rotating refresh sessions, MongoDB-backed direct messaging and message history, live presence/read/typing events, Cloudflare Realtime one-to-one WebRTC calling with call logs, Naive Bayes message sentiment, on-demand AI summaries, and private AI chats with history reset using NVIDIA NIM, Gemini, or Ollama. See [Backend/README.md](Backend/README.md), [Frontend/README.md](Frontend/README.md), and [ML/README.md](ML/README.md) for setup and module details.
+Implemented: Resend-backed account verification, username/email login, rotating refresh sessions, MongoDB-backed direct messaging and message history, live presence/read/typing events, Cloudflare Realtime one-to-one WebRTC calling with call logs, Naive Bayes message sentiment, on-demand AI summaries, and private AI chats with sanitized Markdown replies and history reset using NVIDIA NIM, Gemini, or Ollama. See [Backend/README.md](Backend/README.md), [Frontend/README.md](Frontend/README.md), and [ML/README.md](ML/README.md) for setup and module details.
 
 Not implemented yet: group chats/conferences, voice-message file transfer, LMS ZIP packaging, project report, and demo video.
