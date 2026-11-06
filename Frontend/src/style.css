@@ -406,8 +406,11 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .message-meta time { color: var(--muted); font-size: clamp(10px, .68vw, 12px); }
 .message-bubble { position: relative; display: block; padding: clamp(9px, 1vh, 13px) clamp(12px, 1vw, 17px); border: 1px solid var(--border); border-radius: 5px 15px 15px 15px; background: var(--surface-soft); color: var(--text); }
 .message-bubble p { margin: 0; font-size: clamp(13px, .9vw, 15px); line-height: 1.5; overflow-wrap: anywhere; }
-.image-attachment { display: grid; gap: 6px; max-width: min(100%, 390px); color: inherit; text-decoration: none; }
+.image-attachment { display: grid; gap: 6px; max-width: min(100%, 390px); padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: zoom-in; }
 .image-attachment img { display: block; max-width: min(100%, 360px); max-height: 360px; border-radius: 9px; object-fit: contain; }
+.image-viewer-scrim { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 48px; background: rgba(8, 9, 15, .88); backdrop-filter: blur(8px); cursor: zoom-out; }
+.image-viewer-scrim > img { display: block; max-width: min(100%, 1400px); max-height: calc(100dvh - 96px); object-fit: contain; border-radius: 5px; box-shadow: 0 18px 80px rgba(0, 0, 0, .4); cursor: default; }
+.image-viewer-close { position: absolute; top: 16px; right: 18px; width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 255, 255, .12); color: #fff; }
 .image-attachment span, .voice-attachment span { font-size: 10px; opacity: .82; overflow-wrap: anywhere; }
 .document-attachment { display: flex; align-items: center; gap: 9px; min-width: min(100%, 250px); max-width: 360px; padding: 9px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 9px; color: inherit; text-decoration: none; }
 .document-attachment-icon { display: grid; place-items: center; width: 34px; height: 36px; flex: none; border-radius: 8px; background: color-mix(in srgb, currentColor 12%, transparent); }
@@ -445,6 +448,21 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .composer-tools { display: flex; align-items: center; gap: 2px; padding-bottom: 1px; }
 .file-picker-input { display: none; }
 .composer-attachment-status { margin: 0 0 5px 2px; color: var(--muted); font-size: 10px; }
+.attachment-review-scrim { z-index: 20; }
+.attachment-review-dialog { display: flex; flex-direction: column; width: min(100%, 540px); max-height: min(720px, calc(100dvh - 32px)); overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); box-shadow: var(--panel-shadow); animation: rise-in .2s ease both; }
+.attachment-review-header { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 17px 20px; border-bottom: 1px solid var(--border); }
+.attachment-review-header h2 { margin: 4px 0 0; color: var(--text-strong); font: 700 17px 'Manrope', sans-serif; }
+.attachment-review-content { display: grid; justify-items: center; gap: 12px; min-height: 120px; overflow: auto; padding: 22px; }
+.attachment-review-content > p { max-width: 100%; margin: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 11px; }
+.attachment-review-image { display: block; max-width: 100%; max-height: min(54vh, 460px); border-radius: 10px; object-fit: contain; }
+.attachment-review-audio { display: grid; justify-items: center; gap: 14px; width: min(100%, 380px); padding: 25px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface-soft); color: var(--accent); }
+.attachment-review-audio audio { width: 100%; }
+.attachment-review-document { display: flex; align-items: center; gap: 12px; width: min(100%, 400px); padding: 18px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface-soft); color: var(--text-strong); }
+.attachment-review-document > div { display: grid; gap: 5px; min-width: 0; }
+.attachment-review-document strong { overflow-wrap: anywhere; font-size: 13px; }
+.attachment-review-document small { color: var(--muted); font-size: 10px; }
+.attachment-review-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--border); }
+.attachment-review-actions .primary-button { min-height: 39px; padding: 0 15px; font-size: 11px; }
 .recording-status { display: flex; align-items: center; gap: 7px; color: #d34d5c; }
 .recording-status i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: fade-in .8s ease-in-out infinite alternate; }
 .composer-tool.recording-control { background: color-mix(in srgb, #d34d5c 12%, transparent); color: #d34d5c; }

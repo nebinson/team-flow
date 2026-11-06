@@ -1,6 +1,6 @@
 /** Active conversation header, message history, sentiment tags, and composer. */
 
-import React, { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from 'react';
+import React, { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type { Conversation, Message } from '../../types';
 import { Avatar } from '../Avatar';
 import { Icon } from '../Icon';
@@ -38,9 +38,10 @@ export function ChatRoom({ conversation, messages, accessToken, detailsOpen, dra
   const recordingStartedAtRef = useRef(0);
   const cursorRef = useRef({ start: 0, end: 0 });
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-  const [uploadingName, setUploadingName] = useState('');
+  const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const cancelPendingAttachment = useCallback(() => setPendingAttachment(null), []);
 
   useEffect(() => {
     const chatBody = chatBodyRef.current;
@@ -89,15 +90,13 @@ export function ChatRoom({ conversation, messages, accessToken, detailsOpen, dra
     recorder?.stream.getTracks().forEach((track) => track.stop());
   }, []);
 
-  async function uploadFile(file: File) {
-    setUploadingName(file.name);
-    try {
-      await onUploadAttachment(file);
-    } catch (uploadError) {
+  function sendPendingAttachment() {
+    if (!pendingAttachment) return;
+    const file = pendingAttachment;
+    setPendingAttachment(null);
+    void onUploadAttachment(file).catch((uploadError) => {
       onToast(uploadError instanceof Error ? uploadError.message : 'Could not upload that attachment.');
-    } finally {
-      setUploadingName('');
-    }
+    });
   }
 
   async function toggleVoiceRecording() {
@@ -145,7 +144,7 @@ export function ChatRoom({ conversation, messages, accessToken, detailsOpen, dra
         const extension = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'm4a' : 'webm';
         const voiceFile = new File(recordingChunksRef.current, `voice-message.${extension}`, { type: mimeType.split(';')[0] });
         recordingChunksRef.current = [];
-        if (voiceFile.size) void uploadFile(voiceFile);
+        if (voiceFile.size) setPendingAttachment(voiceFile);
       };
       recordingStartedAtRef.current = Date.now();
       setRecordingSeconds(0);
@@ -202,10 +201,10 @@ export function ChatRoom({ conversation, messages, accessToken, detailsOpen, dra
       {typingName && <div className="typing-indicator"><span className="typing-dots"><i /><i /><i /></span><span>{typingName} is typing</span></div>}
     </div>
     <form className="composer" onSubmit={send}>
-      {uploadingName && <div className="composer-attachment-status">Uploading {uploadingName}…</div>}
       {recording && <div className="composer-attachment-status recording-status"><i /> Recording voice message · {formatRecordingTime(recordingSeconds)} (2 min max)</div>}
-      <input ref={fileInputRef} className="file-picker-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp,.pdf,.txt,.csv,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); event.currentTarget.value = ''; }} />
-      <div className="composer-input-row"><textarea ref={composerRef} value={draft} onSelect={(event) => { cursorRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }} onChange={(event) => { cursorRef.current = { start: event.target.selectionStart, end: event.target.selectionEnd }; onDraftChange(event.target.value); onTyping(Boolean(event.target.value.trim())); event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onKeyDown} placeholder="Write a message…" rows={1} aria-label="Write a message" /><div className="composer-tools"><button type="button" className="icon-button composer-tool" aria-label="Attach an image or document" title="Attach an image or document" disabled={Boolean(uploadingName) || recording} onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={18} /></button><div className="emoji-picker-anchor" ref={emojiPickerRef}><button type="button" className={`icon-button composer-tool${emojiPickerOpen ? ' composer-tool-active' : ''}`} aria-label="Choose emoji" aria-expanded={emojiPickerOpen} aria-haspopup="dialog" onClick={() => { const textarea = composerRef.current; if (textarea) cursorRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd }; setEmojiPickerOpen((open) => !open); }}><Icon name="smile" size={18} /></button>{emojiPickerOpen && <div className="emoji-picker" role="dialog" aria-label="Choose an emoji">{emojiSections.map((section) => <section className="emoji-picker-section" key={section.label}><h3>{section.label}</h3><div className="emoji-picker-grid">{section.emojis.map((emoji) => <button type="button" key={emoji} aria-label={`Insert ${emoji}`} onMouseDown={(event) => event.preventDefault()} onClick={() => addEmoji(emoji)}>{emoji}</button>)}</div></section>)}</div>}</div><button type="button" className={`icon-button composer-tool${recording ? ' recording-control' : ''}`} aria-label={recording ? 'Stop voice recording' : 'Record a voice message'} title={recording ? 'Stop and send voice message' : 'Record a voice message'} disabled={Boolean(uploadingName)} onClick={() => void toggleVoiceRecording()}><Icon name="mic" size={18} /></button><button type="submit" className={`send-button ${draft.trim() ? 'send-ready' : ''}`} aria-label="Send message"><Icon name="send" size={17} /></button></div></div>
+      <input ref={fileInputRef} className="file-picker-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp,.pdf,.txt,.csv,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={(event) => { const file = event.target.files?.[0]; if (file) setPendingAttachment(file); event.currentTarget.value = ''; }} />
+      <div className="composer-input-row"><textarea ref={composerRef} value={draft} onSelect={(event) => { cursorRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }} onChange={(event) => { cursorRef.current = { start: event.target.selectionStart, end: event.target.selectionEnd }; onDraftChange(event.target.value); onTyping(Boolean(event.target.value.trim())); event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onKeyDown} placeholder="Write a message…" rows={1} aria-label="Write a message" /><div className="composer-tools"><button type="button" className="icon-button composer-tool" aria-label="Attach an image or document" title="Attach an image or document" disabled={recording || Boolean(pendingAttachment)} onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={18} /></button><div className="emoji-picker-anchor" ref={emojiPickerRef}><button type="button" className={`icon-button composer-tool${emojiPickerOpen ? ' composer-tool-active' : ''}`} aria-label="Choose emoji" aria-expanded={emojiPickerOpen} aria-haspopup="dialog" onClick={() => { const textarea = composerRef.current; if (textarea) cursorRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd }; setEmojiPickerOpen((open) => !open); }}><Icon name="smile" size={18} /></button>{emojiPickerOpen && <div className="emoji-picker" role="dialog" aria-label="Choose an emoji">{emojiSections.map((section) => <section className="emoji-picker-section" key={section.label}><h3>{section.label}</h3><div className="emoji-picker-grid">{section.emojis.map((emoji) => <button type="button" key={emoji} aria-label={`Insert ${emoji}`} onMouseDown={(event) => event.preventDefault()} onClick={() => addEmoji(emoji)}>{emoji}</button>)}</div></section>)}</div>}</div><button type="button" className={`icon-button composer-tool${recording ? ' recording-control' : ''}`} aria-label={recording ? 'Stop voice recording' : 'Record a voice message'} title={recording ? 'Stop voice recording' : 'Record a voice message'} disabled={Boolean(pendingAttachment)} onClick={() => void toggleVoiceRecording()}><Icon name="mic" size={18} /></button><button type="submit" className={`send-button ${draft.trim() ? 'send-ready' : ''}`} aria-label="Send message"><Icon name="send" size={17} /></button></div></div>
+    {pendingAttachment && <AttachmentSendPreview file={pendingAttachment} onCancel={cancelPendingAttachment} onSend={sendPendingAttachment} />}
     </form>
   </main>;
 }
@@ -235,6 +234,7 @@ function MediaAttachment({ message, token }: { message: Message; token: string }
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
   const [nearViewport, setNearViewport] = useState(false);
   const attachment = message.attachment;
 
@@ -256,7 +256,7 @@ function MediaAttachment({ message, token }: { message: Message; token: string }
   }, []);
 
   useEffect(() => {
-    if (!attachment || !nearViewport) return;
+    if (!attachment || !nearViewport || message.attachmentStatus) return;
     let active = true;
     let objectUrl = '';
     setUrl('');
@@ -273,17 +273,50 @@ function MediaAttachment({ message, token }: { message: Message; token: string }
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [attachment, message.id, nearViewport, retryCount, token]);
+  }, [attachment, message.attachmentStatus, message.id, nearViewport, retryCount, token]);
+
+  useEffect(() => {
+    if (!imageViewerOpen) return;
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setImageViewerOpen(false);
+    }
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [imageViewerOpen]);
 
   if (!attachment) return null;
   const size = formatFileSize(attachment.size);
+  if (message.attachmentStatus === 'uploading') return <div className="attachment-loading">Uploading {attachment.file_name}…</div>;
   return <div ref={previewRef} className="attachment-preview">
     {error ? <div className="attachment-download-error"><span>Could not load {attachment.file_name}: {error}</span><button type="button" onClick={() => { setError(''); setRetryCount((count) => count + 1); }}>Retry</button></div> : !url ? <div className="attachment-loading">{nearViewport ? 'Loading attachment…' : `${attachment.file_name} · ${size}`}</div> : message.messageType === 'image'
-      ? <a className="image-attachment" href={url} target="_blank" rel="noreferrer"><img src={url} alt={attachment.file_name} /><span>{attachment.file_name} · {size}</span></a>
+      ? <><button type="button" className="image-attachment" onClick={() => setImageViewerOpen(true)} aria-label={`Preview ${attachment.file_name}`}><img src={url} alt={attachment.file_name} /><span>{attachment.file_name} · {size}</span></button>{imageViewerOpen && <div className="image-viewer-scrim" role="dialog" aria-modal="true" aria-label={`Image preview: ${attachment.file_name}`} onClick={() => setImageViewerOpen(false)}><button type="button" className="image-viewer-close icon-button" aria-label="Close image preview" onClick={() => setImageViewerOpen(false)}><Icon name="close" size={22} /></button><img src={url} alt={attachment.file_name} onClick={(event) => event.stopPropagation()} /></div>}</>
       : message.messageType === 'voice'
         ? <div className="voice-attachment"><audio controls preload="none" src={url} aria-label="Voice message" /><span>Voice message · {size}</span></div>
         : <a className="document-attachment" href={url} download={attachment.file_name}><span className="document-attachment-icon"><Icon name="paperclip" size={18} /></span><span className="document-attachment-copy"><strong>{attachment.file_name}</strong><small>{size} · Download file</small></span><Icon name="arrow" size={16} /></a>}
   </div>;
+}
+
+function AttachmentSendPreview({ file, onCancel, onSend }: { file: File; onCancel: () => void; onSend: () => void }) {
+  const [previewUrl, setPreviewUrl] = useState('');
+  const isImage = file.type.startsWith('image/');
+  const isVoice = file.type.startsWith('audio/');
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      onCancel();
+    }
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [onCancel]);
+  return <div className="dialog-scrim attachment-review-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}><section className="attachment-review-dialog" role="dialog" aria-modal="true" aria-labelledby="attachment-review-title"><header className="attachment-review-header"><div><span className="workspace-label">ATTACHMENT</span><h2 id="attachment-review-title">Review before sending</h2></div><button type="button" className="icon-button" aria-label="Close preview" onClick={onCancel}><Icon name="close" /></button></header><div className="attachment-review-content">{isImage && previewUrl ? <img className="attachment-review-image" src={previewUrl} alt={`Preview of ${file.name}`} /> : isVoice && previewUrl ? <div className="attachment-review-audio"><Icon name="mic" size={24} /><audio controls src={previewUrl} /></div> : <div className="attachment-review-document"><span className="document-attachment-icon"><Icon name="paperclip" size={20} /></span><div><strong>{file.name}</strong><small>{file.type || 'Document'} · {formatFileSize(file.size)}</small></div></div>}<p>{file.name} · {formatFileSize(file.size)}</p></div><footer className="attachment-review-actions"><button type="button" className="text-button" onClick={onCancel}>Cancel</button><button type="button" className="primary-button" onClick={onSend}><Icon name="send" size={15} /> Send</button></footer></section></div>;
 }
 
 function formatFileSize(size: number): string {

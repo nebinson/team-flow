@@ -316,18 +316,45 @@ function playNotificationSound() {
     const conversation = conversations.find((item) => item.id === conversationId);
     if (!conversation) throw new Error('Choose a conversation before uploading an attachment.');
     updateTyping(false, conversation.id);
-    const saved = await messagingApi.uploadAttachment(accessToken, conversation.id, file, createClientId());
-    const message = messageFromApi(saved, currentUserId);
+    const clientMessageId = createClientId();
+    const messageType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'voice' : 'document';
+    const placeholder = messageType === 'image' ? 'Sent an image' : messageType === 'voice' ? 'Voice message' : 'Sent a document';
+    const optimistic: Message = {
+      id: `pending:${clientMessageId}`,
+      clientId: clientMessageId,
+      sender: 'You',
+      text: placeholder,
+      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      own: true,
+      read: false,
+      messageType,
+      attachmentStatus: 'uploading',
+      attachment: { file_name: file.name, content_type: file.type || 'application/octet-stream', size: file.size, download_url: '' },
+    };
     setMessagesByConversation((current) => {
       const existing = current[conversation.id] ?? [];
-      const optimisticIndex = message.clientId ? existing.findIndex((item) => item.clientId === message.clientId) : -1;
-      if (optimisticIndex < 0 && existing.some((item) => item.id === message.id)) return current;
-      const updated = [...existing];
-      if (optimisticIndex >= 0) updated[optimisticIndex] = message;
-      else updated.push(message);
-      return { ...current, [conversation.id]: updated };
+      return { ...current, [conversation.id]: [...existing, optimistic] };
     });
-    setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, lastMessage: `You: ${message.text}`, time: message.time } : item));
+    setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, lastMessage: `You: ${placeholder}`, time: optimistic.time } : item));
+
+    window.requestAnimationFrame(() => {
+      void messagingApi.uploadAttachment(accessToken, conversation.id, file, clientMessageId).then((saved) => {
+        const message = messageFromApi(saved, currentUserId);
+        setMessagesByConversation((current) => {
+          const existing = current[conversation.id] ?? [];
+          const optimisticIndex = existing.findIndex((item) => item.clientId === clientMessageId);
+          if (optimisticIndex < 0 && existing.some((item) => item.id === message.id)) return current;
+          const updated = [...existing];
+          if (optimisticIndex >= 0) updated[optimisticIndex] = message;
+          else updated.push(message);
+          return { ...current, [conversation.id]: updated };
+        });
+        setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, lastMessage: `You: ${message.text}`, time: message.time } : item));
+      }).catch((error: unknown) => {
+        setMessagesByConversation((current) => ({ ...current, [conversation.id]: (current[conversation.id] ?? []).filter((item) => item.clientId !== clientMessageId) }));
+        notify(error instanceof Error ? error.message : 'Attachment could not be uploaded.');
+      });
+    });
   }
 
   async function createConversation(targetUsername: string) {

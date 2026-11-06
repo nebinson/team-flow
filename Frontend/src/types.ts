@@ -10,6 +10,7 @@ export type Message = {
   read?: boolean;
   sentiment?: 'positive' | 'neutral' | 'negative';
   messageType?: 'text' | 'image' | 'document' | 'voice';
+  attachmentStatus?: 'uploading' | 'failed';
   attachment?: {
     file_name: string;
     content_type: string;
