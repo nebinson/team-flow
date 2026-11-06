@@ -46,6 +46,17 @@ def initialize_database() -> tuple[MongoClient | None, Database | None]:
             [("participant_ids", ASCENDING), ("updated_at", -1)],
             name="conversations_participants_updated",
         )
+        database.friendships.create_index(
+            [("pair_key", ASCENDING)], unique=True, name="friendships_pair_unique"
+        )
+        database.friendships.create_index(
+            [("recipient_id", ASCENDING), ("status", ASCENDING), ("created_at", -1)],
+            name="friendships_incoming_requests",
+        )
+        database.friendships.create_index(
+            [("sender_id", ASCENDING), ("status", ASCENDING), ("created_at", -1)],
+            name="friendships_outgoing_requests",
+        )
         database.messages.create_index(
             [("conversation_id", ASCENDING), ("created_at", -1)],
             name="messages_conversation_created",

@@ -6,7 +6,7 @@ import { Brand } from '../Brand';
 import { Icon } from '../Icon';
 import type { Theme } from '../../types';
 
-export function SidebarRail({ theme, currentUserName, activeView, onViewChange, onToggleTheme, onToast, onSignOut }: { theme: Theme; currentUserName: string; activeView: 'messages' | 'calls'; onViewChange: (view: 'messages' | 'calls') => void; onToggleTheme: () => void; onToast: (message: string) => void; onSignOut: () => void }) {
+export function SidebarRail({ theme, currentUserName, activeView, onViewChange, onToggleTheme, onToast, onSignOut }: { theme: Theme; currentUserName: string; activeView: 'messages' | 'calls' | 'people'; onViewChange: (view: 'messages' | 'calls' | 'people') => void; onToggleTheme: () => void; onToast: (message: string) => void; onSignOut: () => void }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const initials = currentUserName.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'U';
   return <aside className="side-rail">
@@ -15,7 +15,7 @@ export function SidebarRail({ theme, currentUserName, activeView, onViewChange, 
     <nav className="rail-nav" aria-label="Main navigation">
       <button className={`rail-nav-item${activeView === 'messages' ? ' active' : ''}`} aria-label="Messages" aria-current={activeView === 'messages' ? 'page' : undefined} onClick={() => onViewChange('messages')}><Icon name="chat" size={20} /><span className="rail-tooltip">Messages</span>{activeView === 'messages' && <i className="rail-active-mark" />}</button>
       <button className={`rail-nav-item${activeView === 'calls' ? ' active' : ''}`} aria-label="Calls" aria-current={activeView === 'calls' ? 'page' : undefined} onClick={() => onViewChange('calls')}><Icon name="phone" size={19} /><span className="rail-tooltip">Calls</span>{activeView === 'calls' && <i className="rail-active-mark" />}</button>
-      <button className="rail-nav-item" aria-label="People" onClick={() => onToast('Your workspace directory is coming together.')}><Icon name="users" size={20} /><span className="rail-tooltip">People</span></button>
+      <button className={`rail-nav-item${activeView === 'people' ? ' active' : ''}`} aria-label="People" aria-current={activeView === 'people' ? 'page' : undefined} onClick={() => onViewChange('people')}><Icon name="users" size={20} /><span className="rail-tooltip">People</span>{activeView === 'people' && <i className="rail-active-mark" />}</button>
     </nav>
     <div className="rail-bottom">
       <button className="rail-nav-item" aria-label="Toggle theme" onClick={onToggleTheme}><Icon name={theme === 'light' ? 'moon' : 'sun'} size={19} /><span className="rail-tooltip">{theme === 'light' ? 'Dark theme' : 'Light theme'}</span></button>
