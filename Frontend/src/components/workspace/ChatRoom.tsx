@@ -1,6 +1,6 @@
 /** Active conversation header, message history, sentiment tags, and composer. */
 
-import React, { FormEvent, KeyboardEvent, useEffect, useRef } from 'react';
+import React, { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { Conversation, Message } from '../../types';
 import { Avatar } from '../Avatar';
 import { Icon } from '../Icon';
@@ -24,6 +24,9 @@ type Props = {
 export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftChange, onSend, onCall, onToggleDetails, onToast, onBackToList, onShowCalls, typingName, onTyping }: Props) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const chatBodyRef = useRef<HTMLDivElement | null>(null);
+  const emojiPickerRef = useRef<HTMLDivElement | null>(null);
+  const cursorRef = useRef({ start: 0, end: 0 });
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
 
   useEffect(() => {
     const chatBody = chatBodyRef.current;
@@ -34,7 +37,45 @@ export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftCh
     return () => window.cancelAnimationFrame(frame);
   }, [messages, typingName]);
 
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+  useEffect(() => {
+    if (!emojiPickerOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!emojiPickerRef.current?.contains(event.target as Node)) setEmojiPickerOpen(false);
+    }
+    function onPickerKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setEmojiPickerOpen(false);
+        composerRef.current?.focus();
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onPickerKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onPickerKeyDown);
+    };
+  }, [emojiPickerOpen]);
+
+  function addEmoji(emoji: string) {
+    const { start, end } = cursorRef.current;
+    const nextDraft = `${draft.slice(0, start)}${emoji}${draft.slice(end)}`;
+    const nextCursor = start + emoji.length;
+    onDraftChange(nextDraft);
+    onTyping(Boolean(nextDraft.trim()));
+    cursorRef.current = { start: nextCursor, end: nextCursor };
+    setEmojiPickerOpen(false);
+    window.requestAnimationFrame(() => {
+      const textarea = composerRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCursor, nextCursor);
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+    });
+  }
+
+  function onKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       onTyping(false);
@@ -59,10 +100,16 @@ export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftCh
       {typingName && <div className="typing-indicator"><span className="typing-dots"><i /><i /><i /></span><span>{typingName} is typing</span></div>}
     </div>
     <form className="composer" onSubmit={send}>
-      <div className="composer-input-row"><textarea ref={composerRef} value={draft} onChange={(event) => { onDraftChange(event.target.value); onTyping(Boolean(event.target.value.trim())); event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onKeyDown} placeholder="Write a message…" rows={1} aria-label="Write a message" /><div className="composer-tools"><button type="button" className="icon-button composer-tool" aria-label="Attach a file" onClick={() => onToast('File sharing will be available soon.')}><Icon name="paperclip" size={18} /></button><button type="button" className="icon-button composer-tool" aria-label="Add emoji" onClick={() => onDraftChange(`${draft} ✨`)}><Icon name="smile" size={18} /></button><button type="button" className="icon-button composer-tool" aria-label="Voice message" onClick={() => onToast('Voice messages are coming soon.')}><Icon name="mic" size={18} /></button><button type="submit" className={`send-button ${draft.trim() ? 'send-ready' : ''}`} aria-label="Send message"><Icon name="send" size={17} /></button></div></div>
+      <div className="composer-input-row"><textarea ref={composerRef} value={draft} onSelect={(event) => { cursorRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }} onChange={(event) => { cursorRef.current = { start: event.target.selectionStart, end: event.target.selectionEnd }; onDraftChange(event.target.value); onTyping(Boolean(event.target.value.trim())); event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onKeyDown} placeholder="Write a message…" rows={1} aria-label="Write a message" /><div className="composer-tools"><button type="button" className="icon-button composer-tool" aria-label="Attach a file" onClick={() => onToast('File sharing will be available soon.')}><Icon name="paperclip" size={18} /></button><div className="emoji-picker-anchor" ref={emojiPickerRef}><button type="button" className={`icon-button composer-tool${emojiPickerOpen ? ' composer-tool-active' : ''}`} aria-label="Choose emoji" aria-expanded={emojiPickerOpen} aria-haspopup="dialog" onClick={() => { const textarea = composerRef.current; if (textarea) cursorRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd }; setEmojiPickerOpen((open) => !open); }}><Icon name="smile" size={18} /></button>{emojiPickerOpen && <div className="emoji-picker" role="dialog" aria-label="Choose an emoji">{emojiSections.map((section) => <section className="emoji-picker-section" key={section.label}><h3>{section.label}</h3><div className="emoji-picker-grid">{section.emojis.map((emoji) => <button type="button" key={emoji} aria-label={`Insert ${emoji}`} onMouseDown={(event) => event.preventDefault()} onClick={() => addEmoji(emoji)}>{emoji}</button>)}</div></section>)}</div>}</div><button type="button" className="icon-button composer-tool" aria-label="Voice message" onClick={() => onToast('Voice messages are coming soon.')}><Icon name="mic" size={18} /></button><button type="submit" className={`send-button ${draft.trim() ? 'send-ready' : ''}`} aria-label="Send message"><Icon name="send" size={17} /></button></div></div>
     </form>
   </main>;
 }
+
+const emojiSections = [
+  { label: 'Smileys', emojis: ['😀', '😃', '😄', '😁', '😆', '🥹', '😂', '🤣', '😊', '🙂', '😉', '😍', '🥰', '😘', '😎', '🤔', '😅', '😭', '😴', '🤗', '🙃', '😇', '🤩', '😬'] },
+  { label: 'Gestures', emojis: ['👋', '🤚', '✋', '👌', '🤌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '☝️', '👍', '👎', '✊', '👏', '🙌', '🙏', '💪', '🫶'] },
+  { label: 'Hearts & symbols', emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '💕', '💖', '💯', '✨', '🔥', '🎉', '✅', '⭐', '💡', '🚀', '🎯', '☕', '🌈', '💐', '🥳'] },
+];
 
 function MessageRow({ message, previous }: { message: Message; previous?: Message }) {
   const showSender = !message.own && (!previous || previous.sender !== message.sender);
