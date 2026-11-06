@@ -114,8 +114,8 @@ export const messagingApi = {
     data.append('client_message_id', clientMessageId);
     return apiRequest<ApiMessage>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/attachments`, { method: 'POST', body: data }, token);
   },
-  downloadAttachment: (token: string, messageId: string) =>
-    apiBlob(`/api/v1/messages/${encodeURIComponent(messageId)}/attachment`, token),
+  downloadAttachment: (token: string, downloadUrl: string) =>
+    apiBlob(downloadUrl, token),
   markRead: (token: string, conversationId: string) =>
     apiRequest<void>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/read`, { method: 'POST' }, token),
   searchUsers: (token: string, query: string) =>

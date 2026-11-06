@@ -5,6 +5,7 @@ import type { Conversation, Message } from '../../types';
 import { Avatar } from '../Avatar';
 import { Icon } from '../Icon';
 import { messagingApi } from '../../api/messaging';
+import { ApiRequestError } from '../../api/http';
 
 type Props = {
   conversation: Conversation;
@@ -232,7 +233,8 @@ function MessageRow({ message, previous, token }: { message: Message; previous?:
 function MediaAttachment({ message, token }: { message: Message; token: string }) {
   const previewRef = useRef<HTMLDivElement | null>(null);
   const [url, setUrl] = useState('');
-  const [error, setError] = useState(false);
+  const [error, setError] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
   const [nearViewport, setNearViewport] = useState(false);
   const attachment = message.attachment;
 
@@ -258,22 +260,25 @@ function MediaAttachment({ message, token }: { message: Message; token: string }
     let active = true;
     let objectUrl = '';
     setUrl('');
-    setError(false);
-    void messagingApi.downloadAttachment(token, String(message.id)).then((blob) => {
+    setError('');
+    void messagingApi.downloadAttachment(token, attachment.download_url).then((blob) => {
       if (!active) return;
       objectUrl = URL.createObjectURL(blob);
       setUrl(objectUrl);
-    }).catch(() => { if (active) setError(true); });
+    }).catch((downloadError: unknown) => {
+      if (!active) return;
+      setError(downloadError instanceof ApiRequestError ? `${downloadError.message} (HTTP ${downloadError.status})` : downloadError instanceof Error ? downloadError.message : 'Network request failed.');
+    });
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [attachment, message.id, nearViewport, token]);
+  }, [attachment, message.id, nearViewport, retryCount, token]);
 
   if (!attachment) return null;
   const size = formatFileSize(attachment.size);
   return <div ref={previewRef} className="attachment-preview">
-    {error ? <div className="attachment-download-error">Could not load {attachment.file_name}</div> : !url ? <div className="attachment-loading">{nearViewport ? 'Loading attachment…' : `${attachment.file_name} · ${size}`}</div> : message.messageType === 'image'
+    {error ? <div className="attachment-download-error"><span>Could not load {attachment.file_name}: {error}</span><button type="button" onClick={() => { setError(''); setRetryCount((count) => count + 1); }}>Retry</button></div> : !url ? <div className="attachment-loading">{nearViewport ? 'Loading attachment…' : `${attachment.file_name} · ${size}`}</div> : message.messageType === 'image'
       ? <a className="image-attachment" href={url} target="_blank" rel="noreferrer"><img src={url} alt={attachment.file_name} /><span>{attachment.file_name} · {size}</span></a>
       : message.messageType === 'voice'
         ? <div className="voice-attachment"><audio controls preload="none" src={url} aria-label="Voice message" /><span>Voice message · {size}</span></div>
