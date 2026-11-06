@@ -52,7 +52,7 @@ type Props = {
 };
 
 export function Workspace({ theme, currentUserName, accessToken, onCreateConversation, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, call, onCall, onAcceptCall, onRejectCall, onHangUp, onToggleMute, onToggleCamera, toast, callLogs, callLogsLoading, onLoadCallLogs }: Props) {
-  const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('chat');
+  const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('list');
   const [activeView, setActiveView] = useState<'messages' | 'calls' | 'ai'>('messages');
   const conversation = conversations.find((item) => item.id === activeId);
   const messages = conversation ? messagesByConversation[conversation.id] ?? conversation.messages : [];
