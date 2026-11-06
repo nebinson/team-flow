@@ -42,6 +42,7 @@ class DirectConversationRequest(BaseModel):
 
 class CreateMessageRequest(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
+    client_message_id: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
 
     @field_validator("body")
     @classmethod
@@ -61,6 +62,7 @@ class MessageResponse(BaseModel):
     created_at: datetime
     read: bool = False
     sentiment: Literal["positive", "neutral", "negative"] | None = None
+    client_message_id: str | None = None
 
 
 class UserSearchResponse(BaseModel):

@@ -22,6 +22,7 @@ export type ApiMessage = {
   created_at: string;
   read: boolean;
   sentiment: 'positive' | 'neutral' | 'negative' | null;
+  client_message_id?: string | null;
 };
 
 export type ApiConversation = {
@@ -72,6 +73,7 @@ export function conversationFromApi(conversation: ApiConversation, currentUserId
 export function messageFromApi(message: ApiMessage, currentUserId: string): Message {
   return {
     id: message.id,
+    clientId: message.client_message_id ?? undefined,
     sender: message.sender.id === currentUserId ? 'You' : message.sender.name,
     text: message.body,
     time: formatTime(message.created_at),
@@ -86,8 +88,8 @@ export const messagingApi = {
     apiRequest<ApiConversation[]>('/api/v1/conversations', {}, token),
   listMessages: (token: string, conversationId: string) =>
     apiRequest<ApiMessage[]>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {}, token),
-  sendMessage: (token: string, conversationId: string, body: string) =>
-    apiRequest<ApiMessage>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', body: JSON.stringify({ body }) }, token),
+  sendMessage: (token: string, conversationId: string, body: string, clientMessageId: string) =>
+    apiRequest<ApiMessage>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', body: JSON.stringify({ body, client_message_id: clientMessageId }) }, token),
   markRead: (token: string, conversationId: string) =>
     apiRequest<void>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/read`, { method: 'POST' }, token),
   searchUsers: (token: string, query: string) =>

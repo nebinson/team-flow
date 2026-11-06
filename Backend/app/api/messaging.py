@@ -94,24 +94,42 @@ class ConversationConnectionManager:
 
     def __init__(self) -> None:
         self.connections: dict[str, set[WebSocket]] = defaultdict(set)
+        self.focused_connections: dict[str, set[WebSocket]] = defaultdict(set)
         self.event_loop: asyncio.AbstractEventLoop | None = None
 
     async def connect(self, user_id: str, websocket: WebSocket) -> bool:
         self.event_loop = asyncio.get_running_loop()
         await websocket.accept(subprotocol="teamflow")
-        was_offline = not self.connections[user_id]
+        was_offline = not self.focused_connections[user_id]
         self.connections[user_id].add(websocket)
+        self.focused_connections[user_id].add(websocket)
         return was_offline
 
     def disconnect(self, user_id: str, websocket: WebSocket) -> bool:
+        was_online = self.is_online(user_id)
         self.connections[user_id].discard(websocket)
+        self.focused_connections[user_id].discard(websocket)
+        if not self.focused_connections[user_id]:
+            self.focused_connections.pop(user_id, None)
         if not self.connections[user_id]:
             self.connections.pop(user_id, None)
-            return True
-        return False
+        return was_online and not self.is_online(user_id)
+
+    def set_focused(self, user_id: str, websocket: WebSocket, focused: bool) -> bool | None:
+        if websocket not in self.connections.get(user_id, set()):
+            return None
+        was_online = self.is_online(user_id)
+        if focused:
+            self.focused_connections[user_id].add(websocket)
+        else:
+            self.focused_connections[user_id].discard(websocket)
+            if not self.focused_connections[user_id]:
+                self.focused_connections.pop(user_id, None)
+        is_online = self.is_online(user_id)
+        return is_online if is_online != was_online else None
 
     def is_online(self, user_id: str) -> bool:
-        return bool(self.connections.get(user_id))
+        return bool(self.focused_connections.get(user_id))
 
     async def broadcast(self, user_ids: list[str], event: dict) -> None:
         targets = {socket for user_id in user_ids for socket in self.connections.get(user_id, ())}
@@ -224,6 +242,7 @@ def _serialize_messages(
                 and message["sender_id"] == current_user_id
             ),
             sentiment=message.get("sentiment"),
+            client_message_id=message.get("client_message_id"),
         )
         for message in messages
         if message["sender_id"] in senders
@@ -413,9 +432,23 @@ def send_message(
         "message_type": "text",
         "created_at": now,
     }
+    if payload.client_message_id:
+        message["client_message_id"] = payload.client_message_id
     if sentiment:
         message["sentiment"] = sentiment
-    result = database.messages.insert_one(message)
+    try:
+        result = database.messages.insert_one(message)
+    except DuplicateKeyError:
+        if not payload.client_message_id:
+            raise
+        saved_message = database.messages.find_one({
+            "conversation_id": conversation["_id"],
+            "sender_id": user["_id"],
+            "client_message_id": payload.client_message_id,
+        })
+        if saved_message is None:
+            raise
+        return _serialize_messages(database, [saved_message])[0]
     message["_id"] = result.inserted_id
     database.conversations.update_one(
         {"_id": conversation["_id"]},
@@ -504,6 +537,24 @@ async def workspace_socket(websocket: WebSocket) -> None:
                 continue
             if event.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
+                continue
+
+            if event.get("type") == "ui_focus" and isinstance(event.get("focused"), bool):
+                online = connections.set_focused(str(user_id), websocket, event["focused"])
+                if online is not None:
+                    last_seen_at = None
+                    if not online:
+                        last_seen_at = utc_now()
+                        database.users.update_one({"_id": user_id}, {"$set": {"last_seen_at": last_seen_at}})
+                    connections.publish(
+                        _verified_user_ids(database),
+                        {
+                            "type": "presence",
+                            "user_id": str(user_id),
+                            "online": online,
+                            "last_seen_at": last_seen_at.isoformat() if last_seen_at else None,
+                        },
+                    )
                 continue
 
             event_type = event.get("type")

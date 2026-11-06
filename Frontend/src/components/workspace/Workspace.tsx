@@ -1,6 +1,6 @@
 /** Composes the modular workspace panels and their shared selection state. */
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { Conversation, Message, Theme } from '../../types';
 import { Toast } from '../Toast';
 import { CallOverlay } from './CallOverlay';
@@ -54,7 +54,7 @@ type Props = {
 export function Workspace({ theme, currentUserName, accessToken, onCreateConversation, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, call, onCall, onAcceptCall, onRejectCall, onHangUp, onToggleMute, onToggleCamera, toast, callLogs, callLogsLoading, onLoadCallLogs }: Props) {
   const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('chat');
   const [activeView, setActiveView] = useState<'messages' | 'calls' | 'ai'>('messages');
-  const conversation = conversations.find((item) => item.id === activeId) ?? conversations[0];
+  const conversation = conversations.find((item) => item.id === activeId);
   const messages = conversation ? messagesByConversation[conversation.id] ?? conversation.messages : [];
   const [newConversationOpen, setNewConversationOpen] = useState(false);
   function selectConversation(id: string) {
@@ -74,6 +74,20 @@ export function Workspace({ theme, currentUserName, accessToken, onCreateConvers
     setMobilePanel('chat');
   }
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape' || activeView !== 'messages' || !activeId || newConversationOpen || call) return;
+      event.preventDefault();
+      onTyping(false);
+      onDraftChange('');
+      if (detailsOpen) onToggleDetails();
+      onSelectConversation('');
+      setMobilePanel('list');
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeId, activeView, call, detailsOpen, newConversationOpen, onDraftChange, onSelectConversation, onToggleDetails, onTyping]);
+
   return <div className={`app-shell mobile-${mobilePanel}-active${activeView === 'calls' ? ' calls-view-active' : ''}`}>
     <SidebarRail theme={theme} currentUserName={currentUserName} activeView={activeView === 'calls' ? 'calls' : 'messages'} onViewChange={(view) => { setActiveView(view); if (view === 'calls') onLoadCallLogs(); }} onToggleTheme={onToggleTheme} onToast={onToast} onSignOut={onSignOut} />
     {activeView === 'calls' ? <CallLogsPanel logs={callLogs} loading={callLogsLoading} onCall={onCall} onShowMessages={() => setActiveView('messages')} /> : <>
@@ -88,5 +102,5 @@ export function Workspace({ theme, currentUserName, accessToken, onCreateConvers
 }
 
 function EmptyConversation({ onNewConversation }: { onNewConversation: () => void }) {
-  return <main className="chat-main empty-chat-main"><div className="empty-chat-card"><div className="empty-chat-mark"><Icon name="chat" size={24} /></div><span className="workspace-label">A LITTLE MORE CONNECTED</span><h2>Your conversations start here.</h2><p>Find a teammate by name or username and send your first message.</p><button className="primary-button" onClick={onNewConversation}><Icon name="plus" size={16} /> Start a conversation</button></div></main>;
+  return <main className="chat-main empty-chat-main"><div className="empty-chat-card"><div className="empty-chat-mark"><Icon name="chat" size={24} /></div><span className="workspace-label">MESSAGES</span><h2>No chat selected.</h2><p>Choose a conversation from the list, or start a new one with a teammate.</p><button className="primary-button" onClick={onNewConversation}><Icon name="plus" size={16} /> Start a conversation</button></div></main>;
 }

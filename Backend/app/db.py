@@ -50,6 +50,12 @@ def initialize_database() -> tuple[MongoClient | None, Database | None]:
             [("conversation_id", ASCENDING), ("created_at", -1)],
             name="messages_conversation_created",
         )
+        database.messages.create_index(
+            [("conversation_id", ASCENDING), ("sender_id", ASCENDING), ("client_message_id", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"client_message_id": {"$type": "string"}},
+            name="messages_client_idempotency_unique",
+        )
         database.call_logs.create_index([("call_id", ASCENDING)], unique=True, name="call_logs_call_id_unique")
         database.call_logs.create_index([("participant_ids", ASCENDING), ("started_at", -1)], name="call_logs_participants_started")
         database.ai_chats.create_index([("user_id", ASCENDING)], unique=True, name="ai_chats_user_unique")

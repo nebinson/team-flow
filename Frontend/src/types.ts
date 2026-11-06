@@ -2,6 +2,7 @@ export type Screen = 'login' | 'register' | 'verify' | 'workspace';
 export type Theme = 'light' | 'dark';
 export type Message = {
   id: string | number;
+  clientId?: string;
   sender: string;
   text: string;
   time: string;

@@ -48,6 +48,7 @@ export default function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const typingTimeoutRef = useRef<number | undefined>(undefined);
   const receivedTypingTimeouts = useRef<Record<string, number>>({});
+  const sendingConversationsRef = useRef(new Set<string>());
   const conversationsRef = useRef<Conversation[]>(conversations);
   const activeIdRef = useRef(activeId);
   const callSignalHandlerRef = useRef<(event: Record<string, unknown>) => Promise<void>>(async () => undefined);
@@ -271,18 +272,39 @@ function playNotificationSound() {
     if (!text) return;
     const conversation = conversations.find((item) => item.id === activeId);
     if (!conversation) return;
-    if (!accessToken) return;
+    if (!accessToken || sendingConversationsRef.current.has(conversation.id)) return;
+    const clientMessageId = crypto.randomUUID();
+    const optimistic: Message = {
+      id: `pending:${clientMessageId}`,
+      clientId: clientMessageId,
+      sender: 'You',
+      text,
+      time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      own: true,
+      read: false,
+    };
+    sendingConversationsRef.current.add(conversation.id);
     updateTyping(false, conversation.id);
-    void messagingApi.sendMessage(accessToken, conversation.id, text).then((saved) => {
+    setDraft('');
+    setMessagesByConversation((current) => ({ ...current, [conversation.id]: [...(current[conversation.id] ?? []), optimistic] }));
+    setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, lastMessage: `You: ${text}`, time: optimistic.time } : item));
+    void messagingApi.sendMessage(accessToken, conversation.id, text, clientMessageId).then((saved) => {
       const message = messageFromApi(saved, currentUserId);
       setMessagesByConversation((current) => {
         const existing = current[conversation.id] ?? [];
-        if (existing.some((item) => item.id === message.id)) return current;
-        return { ...current, [conversation.id]: [...existing, message] };
+        const optimisticIndex = existing.findIndex((item) => item.clientId === clientMessageId);
+        if (optimisticIndex < 0 && existing.some((item) => item.id === message.id)) return current;
+        const updated = [...existing];
+        if (optimisticIndex >= 0) updated[optimisticIndex] = message;
+        else updated.push(message);
+        return { ...current, [conversation.id]: updated };
       });
       setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, lastMessage: text, time: message.time } : item));
-      setDraft('');
-    }).catch((error: unknown) => notify(error instanceof Error ? error.message : 'Message could not be sent.'));
+    }).catch((error: unknown) => {
+      setMessagesByConversation((current) => ({ ...current, [conversation.id]: (current[conversation.id] ?? []).filter((item) => item.clientId !== clientMessageId) }));
+      setDraft((current) => current || text);
+      notify(error instanceof Error ? error.message : 'Message could not be sent.');
+    }).finally(() => sendingConversationsRef.current.delete(conversation.id));
   }
 
   async function createConversation(targetUsername: string) {
@@ -301,8 +323,11 @@ function playNotificationSound() {
       if (!active) return;
       const fetched = records.map((item) => messageFromApi(item, currentUserId));
       setMessagesByConversation((current) => {
-        const combined = new Map<string | number, Message>();
-        [...fetched, ...(current[activeId] ?? [])].forEach((item) => combined.set(item.id, item));
+        const combined = new Map<string, Message>();
+        [...(current[activeId] ?? []), ...fetched].forEach((item) => {
+          const key = item.clientId ? `client:${item.clientId}` : `id:${item.id}`;
+          combined.set(key, item);
+        });
         return { ...current, [activeId]: [...combined.values()] };
       });
       void messagingApi.markRead(accessToken, activeId).catch(() => undefined);
@@ -330,8 +355,13 @@ function playNotificationSound() {
         const message = messageFromApi(incoming, currentUserId);
         setMessagesByConversation((current) => {
           const existing = current[incoming.conversation_id] ?? [];
-          if (existing.some((item) => item.id === message.id)) return current;
-          return { ...current, [incoming.conversation_id]: [...existing, message] };
+          const clientMessageId = typeof incoming.client_message_id === 'string' ? incoming.client_message_id : undefined;
+          const optimisticIndex = clientMessageId ? existing.findIndex((item) => item.clientId === clientMessageId) : -1;
+          if (optimisticIndex < 0 && existing.some((item) => item.id === message.id)) return current;
+          const updated = [...existing];
+          if (optimisticIndex >= 0) updated[optimisticIndex] = message;
+          else updated.push(message);
+          return { ...current, [incoming.conversation_id]: updated };
         });
         setConversations((current) => {
           const exists = current.some((item) => item.id === incoming.conversation_id);
@@ -359,7 +389,22 @@ function playNotificationSound() {
       }
     });
     socketRef.current = socket;
-    return () => { socket.close(); socketRef.current = null; };
+    const sendFocusState = () => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify({ type: 'ui_focus', focused: document.visibilityState === 'visible' && document.hasFocus() }));
+    };
+    socket.addEventListener('open', sendFocusState);
+    window.addEventListener('focus', sendFocusState);
+    window.addEventListener('blur', sendFocusState);
+    document.addEventListener('visibilitychange', sendFocusState);
+    return () => {
+      socket.removeEventListener('open', sendFocusState);
+      window.removeEventListener('focus', sendFocusState);
+      window.removeEventListener('blur', sendFocusState);
+      document.removeEventListener('visibilitychange', sendFocusState);
+      socket.close();
+      socketRef.current = null;
+    };
   }, [screen, accessToken, currentUserId]);
 
   async function refreshConversations() {

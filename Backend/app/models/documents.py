@@ -39,6 +39,7 @@ class MessageDocument(TypedDict):
     message_type: str
     created_at: datetime
     sentiment: NotRequired[str]
+    client_message_id: NotRequired[str]
 
 
 class CallLogDocument(TypedDict):
