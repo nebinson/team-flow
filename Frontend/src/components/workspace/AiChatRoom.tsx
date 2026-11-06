@@ -1,6 +1,9 @@
 /** Private, persisted AI conversation with a deliberate history reset action. */
 
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
+import remarkGfm from 'remark-gfm';
 import { aiApi, type AiChatMessage } from '../../api/ai';
 import { Icon } from '../Icon';
 
@@ -85,7 +88,10 @@ export function AiChatRoom({ token, onToast }: { token: string; onToast: (messag
       {!loading && !error && messages.length === 0 && <div className="ai-chat-welcome"><span className="ai-welcome-mark"><Icon name="sparkles" size={24} /></span><h3>What can I help you with?</h3><p>Ask for help drafting a message, planning a task, or thinking through a work question.</p><small>Messages are saved to your account and sent to the configured AI provider for replies. Restart erases your saved TeamFlow history and context.</small></div>}
       {!loading && !error && messages.map((message) => <article key={message.id} className={`ai-chat-message${message.role === 'user' ? ' ai-chat-message-user' : ''}`}>
         <div className="ai-message-meta"><strong>{message.role === 'user' ? 'You' : 'TeamFlow AI'}</strong><time>{new Date(message.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time></div>
-        <div className="ai-message-bubble"><p>{message.content}</p></div>
+        <div className="ai-message-bubble">{message.role === 'assistant'
+          ? <div className="ai-message-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>{message.content}</ReactMarkdown></div>
+          : <p>{message.content}</p>}
+        </div>
         {message.provider && <small className="ai-message-provider">Answered with {message.provider}</small>}
       </article>)}
       {sending && <div className="ai-chat-thinking"><span className="typing-dots"><i /><i /><i /></span><span>TeamFlow AI is thinking…</span></div>}
