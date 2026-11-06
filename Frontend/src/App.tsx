@@ -159,7 +159,7 @@ function playNotificationSound() {
     const mappedConversations = apiConversations.map((item) => conversationFromApi(item, profile.id));
     setConversations(mappedConversations);
     setMessagesByConversation({});
-    setActiveId(mappedConversations[0]?.id ?? '');
+    setActiveId('');
     setPassword('');
     setScreen('workspace');
   }
