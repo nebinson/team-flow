@@ -1,6 +1,6 @@
 /** Active conversation header, message history, sentiment tags, and composer. */
 
-import React, { FormEvent, KeyboardEvent, useRef } from 'react';
+import React, { FormEvent, KeyboardEvent, useEffect, useRef } from 'react';
 import type { Conversation, Message } from '../../types';
 import { Avatar } from '../Avatar';
 import { Icon } from '../Icon';
@@ -23,6 +23,16 @@ type Props = {
 
 export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftChange, onSend, onCall, onToggleDetails, onToast, onBackToList, onShowCalls, typingName, onTyping }: Props) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatBodyRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const chatBody = chatBodyRef.current;
+    if (!chatBody) return;
+    const frame = window.requestAnimationFrame(() => {
+      chatBody.scrollTo({ top: chatBody.scrollHeight, behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, typingName]);
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -44,7 +54,7 @@ export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftCh
       <div className="chat-heading"><button className="mobile-back icon-button" aria-label="Back to conversations" onClick={onBackToList}><Icon name="back" size={19} /></button><Avatar initials={conversation.initials} color={conversation.color} online={conversation.online} /><div><h2>{conversation.name}</h2><span>{conversation.online ? <><i className="tiny-presence" /> Online now</> : conversation.lastSeenAt ? `Last seen ${formatLastSeen(conversation.lastSeenAt)}` : 'Offline'}</span></div></div>
       <div className="chat-actions"><button className="icon-button header-action mobile-call-history" aria-label="Call history" onClick={onShowCalls}><Icon name="phoneIncoming" /></button><button className="icon-button header-action" aria-label="Start voice call" onClick={() => onCall('audio')}><Icon name="phone" /></button><button className="icon-button header-action" aria-label="Start video call" onClick={() => onCall('video')}><Icon name="video" /></button><span className="action-divider" /><button className={`icon-button header-action ${detailsOpen ? 'action-active' : ''}`} aria-label="Conversation details" onClick={onToggleDetails}><Icon name="info" /></button></div>
     </header>
-    <div className="chat-body">
+    <div ref={chatBodyRef} className="chat-body">
       {messages.map((message, index) => <MessageRow key={message.id} message={message} previous={messages[index - 1]} />)}
       {typingName && <div className="typing-indicator"><span className="typing-dots"><i /><i /><i /></span><span>{typingName} is typing</span></div>}
     </div>

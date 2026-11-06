@@ -14,6 +14,7 @@ export function AiChatRoom({ token, onToast }: { token: string; onToast: (messag
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatBodyRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const onToastRef = useRef(onToast);
   onToastRef.current = onToast;
@@ -36,7 +37,12 @@ export function AiChatRoom({ token, onToast }: { token: string; onToast: (messag
   }, [token]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const chatBody = chatBodyRef.current;
+    if (!chatBody) return;
+    const frame = window.requestAnimationFrame(() => {
+      chatBody.scrollTo({ top: chatBody.scrollHeight, behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [messages, sending]);
 
   async function send(event?: FormEvent) {
@@ -82,7 +88,7 @@ export function AiChatRoom({ token, onToast }: { token: string; onToast: (messag
       <div className="chat-heading"><span className="ai-chat-avatar"><Icon name="sparkles" size={20} /></span><div><h2>TeamFlow AI</h2><span>Your personal AI assistant</span></div></div>
       <button className="ai-restart-button" type="button" aria-label="Restart conversation and erase saved context" onClick={() => void restart()} disabled={loading || sending} title="Erase saved messages and restart with a clean context"><Icon name="refresh" size={16} /><span>Restart conversation</span></button>
     </header>
-    <div className="chat-body ai-chat-body" role="log" aria-live="polite" aria-label="AI conversation">
+    <div ref={chatBodyRef} className="chat-body ai-chat-body" role="log" aria-live="polite" aria-label="AI conversation">
       {loading && <div className="ai-chat-state">Loading your AI conversation…</div>}
       {!loading && error && <div className="ai-chat-state"><strong>Couldn’t load AI chat</strong><span>{error}</span><button className="text-button" onClick={() => window.location.reload()}>Reload TeamFlow</button></div>}
       {!loading && !error && messages.length === 0 && <div className="ai-chat-welcome"><span className="ai-welcome-mark"><Icon name="sparkles" size={24} /></span><h3>What can I help you with?</h3><p>Ask for help drafting a message, planning a task, or thinking through a work question.</p><small>Messages are saved to your account and sent to the configured AI provider for replies. Restart erases your saved TeamFlow history and context.</small></div>}
