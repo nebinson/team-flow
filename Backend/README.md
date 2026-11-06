@@ -40,8 +40,11 @@ Registration requires `first_name`, `last_name`, `username`, `email`, `gender`, 
 
 All endpoints require `Authorization: Bearer <access_token>`:
 
-- `GET /api/v1/users/search?q=...` — search verified coworkers by username or name.
-- `POST /api/v1/conversations/direct` with `{ "username" }` — create or reopen a one-to-one thread.
+- `GET /api/v1/users/search?q=...` — search accepted friends for the new-conversation dialog.
+- `GET /api/v1/people?q=...` — list verified coworkers with friend relationship state.
+- `GET /api/v1/people/requests` — list incoming and outgoing friend requests.
+- `POST /api/v1/people/requests/{user_id}` — send a request; `POST /api/v1/people/requests/{user_id}/accept` accepts one; `DELETE` cancels or declines a pending request.
+- `POST /api/v1/conversations/direct` with `{ "username" }` — create or reopen a one-to-one thread; new threads require an accepted friend request.
 - `GET /api/v1/conversations` — list threads for the signed-in user, newest activity first.
 - `GET /api/v1/conversations/{id}/messages?limit=50&before=...` — load a history page; limit is 1–100.
 - `POST /api/v1/conversations/{id}/messages` with `{ "body" }` — persist and return a text message (up to 4,000 characters).
@@ -56,7 +59,7 @@ All endpoints require `Authorization: Bearer <access_token>`:
 - `POST /api/v1/ai/chat/messages` with `{ "content" }` — generate and store a user/assistant turn (message limit 4,000 characters); the model receives up to the latest 30 saved messages.
 - `POST /api/v1/ai/chat/restart` — permanently delete the signed-in user's AI chat messages so future requests start without previous context.
 
-Conversation membership is checked for reads, writes, typing, and call-signaling events. One-to-one offers, answers, ICE candidates, and call termination are relayed to the other participant over the workspace WebSocket; audio/video media travels through WebRTC, using Cloudflare TURN when direct connectivity is blocked. Messages and read positions are stored in MongoDB. The current WebSocket fan-out and online-presence registry are in-process for local development; multi-worker deployment will need shared pub/sub and presence storage. Browsers require HTTPS (or localhost) for microphone and camera access, so cross-device development calls need an HTTPS frontend origin.
+Conversation membership is checked for reads, writes, typing, and call-signaling events. Existing direct chats remain established connections; new chats require an accepted friendship. One-to-one offers, answers, ICE candidates, and call termination are relayed to the other participant over the workspace WebSocket; audio/video media travels through WebRTC, using Cloudflare TURN when direct connectivity is blocked. Messages and read positions are stored in MongoDB. The current WebSocket fan-out and online-presence registry are in-process for local development; multi-worker deployment will need shared pub/sub and presence storage. Browsers require HTTPS (or localhost) for microphone and camera access, so cross-device development calls need an HTTPS frontend origin.
 
 Chat attachments use a private Cloudflare R2 bucket through its S3-compatible API. Set `R2_ENDPOINT_URL`, `R2_REGION` (usually `auto`), `R2_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` in the backend environment. The R2 token needs Object Read & Write access to that bucket. Uploads are capped by `R2_MAX_UPLOAD_BYTES` (25 MiB by default); files are type-checked before storage, and downloads require conversation membership.
 

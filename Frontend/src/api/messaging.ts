@@ -13,6 +13,16 @@ export type UserSummary = {
   last_seen_at: string | null;
 };
 
+export type PersonEntry = {
+  user: UserSummary;
+  relationship: 'none' | 'incoming' | 'outgoing' | 'friends';
+};
+
+export type FriendRequests = {
+  incoming: UserSummary[];
+  outgoing: UserSummary[];
+};
+
 export type ApiMessage = {
   id: string;
   conversation_id: string;
@@ -110,6 +120,16 @@ export const messagingApi = {
     apiRequest<void>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/read`, { method: 'POST' }, token),
   searchUsers: (token: string, query: string) =>
     apiRequest<{ users: UserSummary[] }>(`/api/v1/users/search?q=${encodeURIComponent(query)}`, {}, token),
+  listPeople: (token: string, query = '') =>
+    apiRequest<{ people: PersonEntry[] }>(`/api/v1/people${query ? `?q=${encodeURIComponent(query)}` : ''}`, {}, token),
+  listFriendRequests: (token: string) =>
+    apiRequest<FriendRequests>('/api/v1/people/requests', {}, token),
+  sendFriendRequest: (token: string, userId: string) =>
+    apiRequest<{ relationship: 'outgoing' | 'friends' }>(`/api/v1/people/requests/${encodeURIComponent(userId)}`, { method: 'POST' }, token),
+  acceptFriendRequest: (token: string, userId: string) =>
+    apiRequest<{ relationship: 'friends' }>(`/api/v1/people/requests/${encodeURIComponent(userId)}/accept`, { method: 'POST' }, token),
+  removeFriendRequest: (token: string, userId: string) =>
+    apiRequest<void>(`/api/v1/people/requests/${encodeURIComponent(userId)}`, { method: 'DELETE' }, token),
   createDirectConversation: (token: string, username: string) =>
     apiRequest<ApiConversation>('/api/v1/conversations/direct', { method: 'POST', body: JSON.stringify({ username }) }, token),
   connectWorkspace(token: string, onEvent: (event: Record<string, unknown>) => void) {

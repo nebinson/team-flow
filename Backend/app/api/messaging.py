@@ -29,9 +29,13 @@ from app.schemas.messaging import (
     CallLogResponse,
     CreateMessageRequest,
     DirectConversationRequest,
+    FriendRequestResponse,
+    FriendRequestsResponse,
     LastMessageSummary,
     MessageAttachmentResponse,
     MessageResponse,
+    PeopleResponse,
+    PersonEntry,
     UserSearchResponse,
     UserSummary,
 )
@@ -181,6 +185,53 @@ def _user_summary(user: dict) -> UserSummary:
     )
 
 
+def _pair_key(first_user_id: ObjectId, second_user_id: ObjectId) -> str:
+    return ":".join(sorted((str(first_user_id), str(second_user_id))))
+
+
+def _existing_direct_conversation(database: Database, first_user_id: ObjectId, second_user_id: ObjectId) -> dict | None:
+    return database.conversations.find_one({"direct_key": _pair_key(first_user_id, second_user_id)})
+
+
+def _relationship(database: Database, user_id: ObjectId, other_user_id: ObjectId) -> str:
+    pair_key = _pair_key(user_id, other_user_id)
+    friendship = database.friendships.find_one({"pair_key": pair_key})
+    if friendship:
+        if friendship.get("status") == "accepted":
+            return "friends"
+        return "outgoing" if friendship.get("sender_id") == user_id else "incoming"
+    # Existing direct chats predate friend requests and remain established connections.
+    return "friends" if _existing_direct_conversation(database, user_id, other_user_id) else "none"
+
+
+def _relationships_for_users(database: Database, user_id: ObjectId, users: list[dict]) -> dict[ObjectId, str]:
+    pair_keys = {_pair_key(user_id, person["_id"]): person["_id"] for person in users}
+    if not pair_keys:
+        return {}
+    relationships: dict[ObjectId, str] = {}
+    for friendship in database.friendships.find({"pair_key": {"$in": list(pair_keys)}}):
+        other_id = pair_keys[friendship["pair_key"]]
+        relationships[other_id] = (
+            "friends" if friendship.get("status") == "accepted"
+            else "outgoing" if friendship.get("sender_id") == user_id
+            else "incoming"
+        )
+    established = {
+        conversation["direct_key"]
+        for conversation in database.conversations.find({"direct_key": {"$in": list(pair_keys)}})
+    }
+    for pair_key, other_id in pair_keys.items():
+        if pair_key in established:
+            relationships[other_id] = "friends"
+        else:
+            relationships.setdefault(other_id, "none")
+    return relationships
+
+
+def _publish_people_changed(user_ids: list[ObjectId]) -> None:
+    connections.publish([str(user_id) for user_id in user_ids], {"type": "friend_request_changed"})
+
+
 def _serialize_conversations(
     database: Database, conversations: list[dict]
 ) -> list[ConversationResponse]:
@@ -298,7 +349,7 @@ def search_users(
 ) -> UserSearchResponse:
     """Find verified workspace members by username or name."""
     pattern = re.escape(q.strip().removeprefix("@").casefold())
-    found = database.users.find(
+    found = list(database.users.find(
         {
             "_id": {"$ne": user["_id"]},
             "email_verified": True,
@@ -310,8 +361,149 @@ def search_users(
                 {"name": {"$regex": pattern, "$options": "i"}},
             ],
         }
-    ).limit(20)
-    return UserSearchResponse(users=[_user_summary(record) for record in found])
+    ).limit(100))
+    relationships = _relationships_for_users(database, user["_id"], found)
+    friends = [record for record in found if relationships.get(record["_id"]) == "friends"]
+    return UserSearchResponse(users=[_user_summary(record) for record in friends[:20]])
+
+
+@router.get("/people", response_model=PeopleResponse)
+def list_people(
+    q: str = Query(default="", max_length=50),
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> PeopleResponse:
+    """List verified coworkers with their friend-request state."""
+    filters: dict = {
+        "_id": {"$ne": user["_id"]},
+        "email_verified": True,
+        "username": {"$type": "string"},
+    }
+    query = q.strip().removeprefix("@").casefold()
+    if query:
+        pattern = re.escape(query)
+        filters["$or"] = [
+            {"username": {"$regex": pattern, "$options": "i"}},
+            {"first_name": {"$regex": pattern, "$options": "i"}},
+            {"last_name": {"$regex": pattern, "$options": "i"}},
+            {"name": {"$regex": pattern, "$options": "i"}},
+        ]
+    records = list(database.users.find(filters).sort([("first_name", 1), ("last_name", 1)]).limit(100))
+    relationships = _relationships_for_users(database, user["_id"], records)
+    return PeopleResponse(people=[PersonEntry(
+        user=_user_summary(record), relationship=relationships[record["_id"]]
+    ) for record in records])
+
+
+@router.get("/people/requests", response_model=FriendRequestsResponse)
+def list_friend_requests(
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> FriendRequestsResponse:
+    """Return incoming and outgoing pending friend requests."""
+    rows = list(database.friendships.find({"status": "pending", "$or": [
+        {"sender_id": user["_id"]}, {"recipient_id": user["_id"]},
+    ]}).sort("created_at", -1).limit(200))
+    incoming_ids = [row["sender_id"] for row in rows if row["recipient_id"] == user["_id"]]
+    outgoing_ids = [row["recipient_id"] for row in rows if row["sender_id"] == user["_id"]]
+    profiles = {
+        record["_id"]: _user_summary(record)
+        for record in database.users.find({"_id": {"$in": incoming_ids + outgoing_ids}, "email_verified": True})
+    }
+    return FriendRequestsResponse(
+        incoming=[profiles[item] for item in incoming_ids if item in profiles],
+        outgoing=[profiles[item] for item in outgoing_ids if item in profiles],
+    )
+
+
+@router.post("/people/requests/{target_user_id}", response_model=FriendRequestResponse, status_code=status.HTTP_201_CREATED)
+def send_friend_request(
+    target_user_id: str,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> FriendRequestResponse:
+    """Send a friend request to a verified coworker."""
+    try:
+        target_id = ObjectId(target_user_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Coworker not found.") from exc
+    if target_id == user["_id"]:
+        raise HTTPException(status_code=400, detail="You cannot send a friend request to yourself.")
+    target = database.users.find_one({"_id": target_id, "email_verified": True})
+    if target is None:
+        raise HTTPException(status_code=404, detail="Coworker not found.")
+
+    pair_key = _pair_key(user["_id"], target_id)
+    existing = database.friendships.find_one({"pair_key": pair_key})
+    if existing:
+        if existing.get("status") == "accepted":
+            return FriendRequestResponse(relationship="friends")
+        if existing.get("sender_id") == user["_id"]:
+            return FriendRequestResponse(relationship="outgoing")
+        raise HTTPException(status_code=409, detail="This coworker has already sent you a request.")
+    if _existing_direct_conversation(database, user["_id"], target_id):
+        return FriendRequestResponse(relationship="friends")
+
+    now = utc_now()
+    try:
+        database.friendships.insert_one({
+            "pair_key": pair_key,
+            "sender_id": user["_id"],
+            "recipient_id": target_id,
+            "status": "pending",
+            "created_at": now,
+            "updated_at": now,
+        })
+    except DuplicateKeyError:
+        existing = database.friendships.find_one({"pair_key": pair_key})
+        if existing and existing.get("sender_id") == user["_id"]:
+            return FriendRequestResponse(relationship="outgoing")
+        raise HTTPException(status_code=409, detail="A friend request already exists.")
+    _publish_people_changed([user["_id"], target_id])
+    return FriendRequestResponse(relationship="outgoing")
+
+
+@router.post("/people/requests/{target_user_id}/accept", response_model=FriendRequestResponse)
+def accept_friend_request(
+    target_user_id: str,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> FriendRequestResponse:
+    """Accept a coworker's incoming friend request."""
+    try:
+        target_id = ObjectId(target_user_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Friend request not found.") from exc
+    now = utc_now()
+    result = database.friendships.update_one(
+        {"pair_key": _pair_key(user["_id"], target_id), "sender_id": target_id, "recipient_id": user["_id"], "status": "pending"},
+        {"$set": {"status": "accepted", "accepted_at": now, "updated_at": now}},
+    )
+    if not result.modified_count:
+        raise HTTPException(status_code=404, detail="Incoming friend request not found.")
+    _publish_people_changed([user["_id"], target_id])
+    return FriendRequestResponse(relationship="friends")
+
+
+@router.delete("/people/requests/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_friend_request(
+    target_user_id: str,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> None:
+    """Decline an incoming request or cancel an outgoing request."""
+    try:
+        target_id = ObjectId(target_user_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Friend request not found.") from exc
+    result = database.friendships.delete_one({
+        "pair_key": _pair_key(user["_id"], target_id),
+        "status": "pending",
+        "$or": [{"sender_id": user["_id"]}, {"recipient_id": user["_id"]}],
+    })
+    if not result.deleted_count:
+        raise HTTPException(status_code=404, detail="Pending friend request not found.")
+    _publish_people_changed([user["_id"], target_id])
 
 
 @router.post(
@@ -336,6 +528,10 @@ def create_direct_conversation(
     participant_ids = sorted([user["_id"], other_user["_id"]], key=str)
     direct_key = ":".join(str(participant_id) for participant_id in participant_ids)
     conversation = database.conversations.find_one({"direct_key": direct_key})
+    if conversation is None:
+        friendship = database.friendships.find_one({"pair_key": direct_key, "status": "accepted"})
+        if friendship is None:
+            raise HTTPException(status_code=403, detail="Send and accept a friend request before starting a conversation.")
     if conversation is None:
         now = utc_now()
         new_conversation: ConversationDocument = {
