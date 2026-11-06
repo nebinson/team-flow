@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { authApi } from './api/auth';
+import type { UserProfile } from './api/auth';
 import { ApiRequestError, clearRefreshToken, getRefreshToken, setRefreshToken } from './api/http';
 import { conversationFromApi, messageFromApi, messagingApi, type ApiMessage } from './api/messaging';
 import { callsApi, type ApiCallLog, type CallSignal } from './api/calls';
@@ -9,6 +10,7 @@ import { AuthScreen, VerificationScreen } from './components/auth/AuthScreens';
 import { Toast } from './components/Toast';
 import { Workspace } from './components/workspace/Workspace';
 import { useWebRtcCall } from './hooks/useWebRtcCall';
+import { createClientId } from './utils/clientId';
 import type { Conversation, Message, Screen, Theme } from './types';
 
 export default function App() {
@@ -44,6 +46,7 @@ export default function App() {
   // Keep the bearer token in memory for future protected chat requests; never persist it.
   const [accessToken, setAccessToken] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [typingByConversation, setTypingByConversation] = useState<Record<string, string>>({});
   const socketRef = useRef<WebSocket | null>(null);
   const typingTimeoutRef = useRef<number | undefined>(undefined);
@@ -154,6 +157,7 @@ function playNotificationSound() {
     setAccessToken(result.access_token);
     const profile = await authApi.currentUser(result.access_token);
     setDisplayName(profile.name);
+    setUserProfile(profile);
     setCurrentUserId(profile.id);
     const apiConversations = await messagingApi.listConversations(result.access_token);
     const mappedConversations = apiConversations.map((item) => conversationFromApi(item, profile.id));
@@ -273,7 +277,7 @@ function playNotificationSound() {
     const conversation = conversations.find((item) => item.id === activeId);
     if (!conversation) return;
     if (!accessToken || sendingConversationsRef.current.has(conversation.id)) return;
-    const clientMessageId = crypto.randomUUID();
+    const clientMessageId = createClientId();
     const optimistic: Message = {
       id: `pending:${clientMessageId}`,
       clientId: clientMessageId,
@@ -305,6 +309,25 @@ function playNotificationSound() {
       setDraft((current) => current || text);
       notify(error instanceof Error ? error.message : 'Message could not be sent.');
     }).finally(() => sendingConversationsRef.current.delete(conversation.id));
+  }
+
+  async function uploadAttachment(file: File, conversationId: string) {
+    if (!accessToken) throw new Error('Sign in to send an attachment.');
+    const conversation = conversations.find((item) => item.id === conversationId);
+    if (!conversation) throw new Error('Choose a conversation before uploading an attachment.');
+    updateTyping(false, conversation.id);
+    const saved = await messagingApi.uploadAttachment(accessToken, conversation.id, file, createClientId());
+    const message = messageFromApi(saved, currentUserId);
+    setMessagesByConversation((current) => {
+      const existing = current[conversation.id] ?? [];
+      const optimisticIndex = message.clientId ? existing.findIndex((item) => item.clientId === message.clientId) : -1;
+      if (optimisticIndex < 0 && existing.some((item) => item.id === message.id)) return current;
+      const updated = [...existing];
+      if (optimisticIndex >= 0) updated[optimisticIndex] = message;
+      else updated.push(message);
+      return { ...current, [conversation.id]: updated };
+    });
+    setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, lastMessage: `You: ${message.text}`, time: message.time } : item));
   }
 
   async function createConversation(targetUsername: string) {
@@ -439,5 +462,5 @@ function playNotificationSound() {
     </>;
   }
 
-  return <Workspace theme={theme} currentUserName={displayName} accessToken={accessToken} onCreateConversation={createConversation} onToggleTheme={toggleTheme} onSignOut={() => { callController.hangUp(); const refreshToken = getRefreshToken(); if (refreshToken) void authApi.logout(refreshToken).catch(() => undefined); clearRefreshToken(); setAccessToken(''); setCurrentUserId(''); setConversations([]); setMessagesByConversation({}); setCallLogs([]); setActiveId(''); setScreen('login'); }} onToast={notify} conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={(id) => { setActiveId(id); setConversations((current) => current.map((item) => item.id === id ? { ...item, unread: 0 } : item)); }} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onTyping={(typing) => updateTyping(typing)} typingName={typingByConversation[activeId]} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} call={callController.call} onCall={(conversationId, kind) => void callController.startCall(conversationId, kind)} onAcceptCall={() => void callController.acceptCall()} onRejectCall={callController.rejectCall} onHangUp={callController.hangUp} onToggleMute={callController.toggleMute} onToggleCamera={callController.toggleCamera} toast={toast} callLogs={callLogs} callLogsLoading={callLogsLoading} onLoadCallLogs={() => void loadCallLogs()} />;
+  return <Workspace theme={theme} currentUserName={displayName} userProfile={userProfile} accessToken={accessToken} onProfileUpdated={(profile) => { setUserProfile(profile); setDisplayName(profile.name); }} onCreateConversation={createConversation} onUploadAttachment={uploadAttachment} onToggleTheme={toggleTheme} onSignOut={() => { callController.hangUp(); const refreshToken = getRefreshToken(); if (refreshToken) void authApi.logout(refreshToken).catch(() => undefined); clearRefreshToken(); setAccessToken(''); setCurrentUserId(''); setUserProfile(null); setConversations([]); setMessagesByConversation({}); setCallLogs([]); setActiveId(''); setScreen('login'); }} onToast={notify} conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={(id) => { setActiveId(id); setConversations((current) => current.map((item) => item.id === id ? { ...item, unread: 0 } : item)); }} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onTyping={(typing) => updateTyping(typing)} typingName={typingByConversation[activeId]} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} call={callController.call} onCall={(conversationId, kind) => void callController.startCall(conversationId, kind)} onAcceptCall={() => void callController.acceptCall()} onRejectCall={callController.rejectCall} onHangUp={callController.hangUp} onToggleMute={callController.toggleMute} onToggleCamera={callController.toggleCamera} toast={toast} callLogs={callLogs} callLogsLoading={callLogsLoading} onLoadCallLogs={() => void loadCallLogs()} />;
 }

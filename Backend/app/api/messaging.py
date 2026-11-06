@@ -1,19 +1,25 @@
 """Authenticated direct-message APIs and local WebSocket fan-out."""
 
 import asyncio
+import io
 import json
 import logging
 import re
+import zipfile
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from collections import defaultdict
 from datetime import datetime
+from pathlib import PurePosixPath
+from uuid import uuid4
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
+from starlette.concurrency import run_in_threadpool
+from starlette.responses import StreamingResponse
 
 from app.api.auth import get_current_user
 from app.db import get_database, utc_now
@@ -24,17 +30,27 @@ from app.schemas.messaging import (
     CreateMessageRequest,
     DirectConversationRequest,
     LastMessageSummary,
+    MessageAttachmentResponse,
     MessageResponse,
     UserSearchResponse,
     UserSummary,
 )
 from app.security import decode_access_token
+from app.services import r2_storage
 from app.services.sentiment import predict_sentiment, predict_sentiments
 from app.settings import settings
 
 router = APIRouter(tags=["messaging"])
 logger = logging.getLogger(__name__)
 _CALL_SIGNAL_TYPES = {"call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy", "call_missed"}
+_IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+_DOCUMENT_TYPES = {
+    ".pdf": "application/pdf", ".txt": "text/plain", ".csv": "text/csv", ".md": "text/markdown",
+    ".doc": "application/msword", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint", ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+_VOICE_TYPES = {".webm": "audio/webm", ".ogg": "audio/ogg", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".aac": "audio/aac"}
 
 
 @router.get("/calls/ice-servers")
@@ -243,6 +259,16 @@ def _serialize_messages(
             ),
             sentiment=message.get("sentiment"),
             client_message_id=message.get("client_message_id"),
+            attachment=(
+                MessageAttachmentResponse(
+                    file_name=message["attachment"]["file_name"],
+                    content_type=message["attachment"]["content_type"],
+                    size=message["attachment"]["size"],
+                    download_url=f"/api/v1/messages/{message['_id']}/attachment",
+                )
+                if message.get("attachment")
+                else None
+            ),
         )
         for message in messages
         if message["sender_id"] in senders
@@ -473,6 +499,195 @@ def send_message(
         },
     )
     return response
+
+
+def _safe_attachment_name(filename: str | None) -> str:
+    name = PurePosixPath((filename or "attachment").replace("\\", "/")).name
+    name = "".join(character for character in name if character.isprintable() and character not in "\r\n\x00").strip(" .")
+    return name[:180] or "attachment"
+
+
+def _classify_attachment(filename: str, content: bytes) -> tuple[str, str]:
+    extension = PurePosixPath(filename).suffix.casefold()
+    if extension in _IMAGE_TYPES:
+        valid = {
+            ".jpg": content.startswith(b"\xff\xd8\xff"),
+            ".jpeg": content.startswith(b"\xff\xd8\xff"),
+            ".png": content.startswith(b"\x89PNG\r\n\x1a\n"),
+            ".gif": content.startswith((b"GIF87a", b"GIF89a")),
+            ".webp": content.startswith(b"RIFF") and content[8:12] == b"WEBP",
+        }[extension]
+        if valid:
+            return "image", _IMAGE_TYPES[extension]
+    elif extension in _DOCUMENT_TYPES:
+        if extension == ".pdf":
+            valid = content.startswith(b"%PDF-")
+        elif extension in {".doc", ".xls", ".ppt"}:
+            valid = content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+        elif extension in {".docx", ".xlsx", ".pptx"}:
+            package_entry = {".docx": "word/document.xml", ".xlsx": "xl/workbook.xml", ".pptx": "ppt/presentation.xml"}[extension]
+            try:
+                with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                    names = set(archive.namelist())
+                valid = "[Content_Types].xml" in names and package_entry in names
+            except (OSError, zipfile.BadZipFile):
+                valid = False
+        else:
+            try:
+                content.decode("utf-8")
+                valid = b"\x00" not in content
+            except UnicodeDecodeError:
+                valid = False
+        if valid:
+            return "document", _DOCUMENT_TYPES[extension]
+    elif extension in _VOICE_TYPES:
+        valid = {
+            ".webm": content.startswith(b"\x1aE\xdf\xa3"),
+            ".ogg": content.startswith(b"OggS"),
+            ".mp3": content.startswith(b"ID3") or (len(content) > 1 and content[0] == 0xff and content[1] & 0xe0 == 0xe0),
+            ".wav": content.startswith(b"RIFF") and content[8:12] == b"WAVE",
+            ".m4a": len(content) > 11 and content[4:8] == b"ftyp",
+            ".aac": len(content) > 1 and content[0] == 0xff and content[1] & 0xf6 == 0xf0,
+        }[extension]
+        if valid:
+            return "voice", _VOICE_TYPES[extension]
+    raise HTTPException(status_code=415, detail="Use a supported image, document, or audio recording file.")
+
+
+@router.post(
+    "/conversations/{conversation_id}/attachments",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_message_attachment(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    caption: str = Form(default="", max_length=1000),
+    client_message_id: str | None = Form(default=None, min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$"),
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> MessageResponse:
+    """Upload a validated image, document, or voice recording to private R2 storage."""
+    conversation = _get_member_conversation(database, conversation_id, user["_id"])
+    if not r2_storage.is_configured():
+        raise HTTPException(status_code=503, detail="Chat file storage is not configured. Set the Cloudflare R2 environment variables.")
+
+    if client_message_id:
+        existing = database.messages.find_one({
+            "conversation_id": conversation["_id"],
+            "sender_id": user["_id"],
+            "client_message_id": client_message_id,
+        })
+        if existing:
+            return _serialize_messages(database, [existing])[0]
+
+    max_bytes = max(1, settings.r2_max_upload_bytes)
+    content = await file.read(max_bytes + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="The selected file is empty.")
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"Attachments must be no larger than {max_bytes // (1024 * 1024)} MB.")
+
+    file_name = _safe_attachment_name(file.filename)
+    message_type, content_type = _classify_attachment(file_name, content)
+    storage_key = f"{conversation['_id']}/{user['_id']}/{uuid4().hex}{PurePosixPath(file_name).suffix.casefold()}"
+    try:
+        await run_in_threadpool(r2_storage.put_object, storage_key, content, content_type)
+    except Exception as exc:
+        logger.warning("R2 attachment upload failed (%s).", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Could not upload the attachment to chat storage.") from exc
+
+    body = caption.strip() or {"image": "Sent an image", "document": "Sent a document", "voice": "Voice message"}[message_type]
+    now = utc_now()
+    message: MessageDocument = {
+        "conversation_id": conversation["_id"],
+        "sender_id": user["_id"],
+        "body": body,
+        "message_type": message_type,
+        "created_at": now,
+        "attachment": {
+            "storage_key": storage_key,
+            "file_name": file_name,
+            "content_type": content_type,
+            "size": len(content),
+        },
+    }
+    if client_message_id:
+        message["client_message_id"] = client_message_id
+    sentiment = predict_sentiment(body)
+    if sentiment:
+        message["sentiment"] = sentiment
+    try:
+        result = database.messages.insert_one(message)
+        message["_id"] = result.inserted_id
+    except DuplicateKeyError:
+        await run_in_threadpool(r2_storage.delete_object, storage_key)
+        if not client_message_id:
+            raise
+        existing = database.messages.find_one({
+            "conversation_id": conversation["_id"],
+            "sender_id": user["_id"],
+            "client_message_id": client_message_id,
+        })
+        if existing:
+            return _serialize_messages(database, [existing])[0]
+        raise
+    except Exception as exc:
+        await run_in_threadpool(r2_storage.delete_object, storage_key)
+        logger.warning("Could not persist uploaded attachment message (%s).", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="The attachment uploaded but could not be added to the conversation.") from exc
+
+    database.conversations.update_one(
+        {"_id": conversation["_id"]},
+        {"$set": {"updated_at": now, "last_message": {"body": body, "sender_id": user["_id"], "created_at": now}}},
+    )
+    response = _serialize_messages(database, [message])[0]
+    connections.publish(
+        [str(participant_id) for participant_id in conversation["participant_ids"]],
+        {"type": "message", "conversation_id": str(conversation["_id"]), "message": response.model_dump(mode="json")},
+    )
+    return response
+
+
+@router.get("/messages/{message_id}/attachment")
+def download_message_attachment(
+    message_id: str,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> StreamingResponse:
+    """Stream a private attachment only to a member of its conversation."""
+    try:
+        message_object_id = ObjectId(message_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Attachment not found.") from exc
+    message = database.messages.find_one({"_id": message_object_id})
+    if message is None or not message.get("attachment"):
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    conversation = database.conversations.find_one({"_id": message["conversation_id"], "participant_ids": user["_id"]})
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    if not r2_storage.is_configured():
+        raise HTTPException(status_code=503, detail="Chat file storage is not configured.")
+    attachment = message["attachment"]
+    try:
+        result = r2_storage.get_object(attachment["storage_key"])
+    except Exception as exc:
+        logger.warning("R2 attachment download failed (%s).", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Could not retrieve the chat attachment.") from exc
+
+    def chunks():
+        try:
+            yield from result["Body"].iter_chunks(chunk_size=64 * 1024)
+        finally:
+            result["Body"].close()
+
+    disposition = "inline" if message.get("message_type") in {"image", "voice"} else "attachment"
+    headers = {
+        "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(attachment['file_name'])}",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+    }
+    return StreamingResponse(chunks(), media_type=attachment["content_type"], headers=headers)
 
 
 @router.post("/conversations/{conversation_id}/read", status_code=status.HTTP_204_NO_CONTENT)

@@ -9,7 +9,13 @@ export type Message = {
   own?: boolean;
   read?: boolean;
   sentiment?: 'positive' | 'neutral' | 'negative';
-  attachment?: string;
+  messageType?: 'text' | 'image' | 'document' | 'voice';
+  attachment?: {
+    file_name: string;
+    content_type: string;
+    size: number;
+    download_url: string;
+  };
 };
 export type Conversation = {
   id: string;

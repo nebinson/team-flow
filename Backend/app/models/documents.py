@@ -13,6 +13,7 @@ class UserDocument(TypedDict):
     first_name: NotRequired[str]
     last_name: NotRequired[str]
     gender: NotRequired[str]
+    avatar_key: NotRequired[str]
     email: str
     password_hash: str
     email_verified: bool
@@ -40,6 +41,7 @@ class MessageDocument(TypedDict):
     created_at: datetime
     sentiment: NotRequired[str]
     client_message_id: NotRequired[str]
+    attachment: NotRequired[dict]
 
 
 class CallLogDocument(TypedDict):
@@ -63,6 +65,8 @@ class EmailVerificationDocument(TypedDict):
     created_at: datetime
     last_sent_at: datetime
     attempt_count: int
+    purpose: NotRequired[str]
+    pending_email: NotRequired[str]
 
 
 class RefreshTokenDocument(TypedDict):

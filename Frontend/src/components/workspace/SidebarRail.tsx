@@ -5,8 +5,10 @@ import { Avatar } from '../Avatar';
 import { Brand } from '../Brand';
 import { Icon } from '../Icon';
 import type { Theme } from '../../types';
+import type { UserProfile } from '../../api/auth';
+import { UserAvatar } from './ProfilePage';
 
-export function SidebarRail({ theme, currentUserName, activeView, onViewChange, onToggleTheme, onToast, onSignOut }: { theme: Theme; currentUserName: string; activeView: 'messages' | 'calls'; onViewChange: (view: 'messages' | 'calls') => void; onToggleTheme: () => void; onToast: (message: string) => void; onSignOut: () => void }) {
+export function SidebarRail({ theme, currentUserName, profile, token, activeView, onViewChange, onOpenProfile, onToggleTheme, onToast, onSignOut }: { theme: Theme; currentUserName: string; profile: UserProfile | null; token: string; activeView: 'messages' | 'calls'; onViewChange: (view: 'messages' | 'calls') => void; onOpenProfile: () => void; onToggleTheme: () => void; onToast: (message: string) => void; onSignOut: () => void }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const initials = currentUserName.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'U';
   return <aside className="side-rail">
@@ -19,8 +21,8 @@ export function SidebarRail({ theme, currentUserName, activeView, onViewChange, 
     </nav>
     <div className="rail-bottom">
       <button className="rail-nav-item" aria-label="Toggle theme" onClick={onToggleTheme}><Icon name={theme === 'light' ? 'moon' : 'sun'} size={19} /><span className="rail-tooltip">{theme === 'light' ? 'Dark theme' : 'Light theme'}</span></button>
-      <button className="profile-trigger" aria-label="Open profile menu" onClick={() => setProfileOpen((open) => !open)}><Avatar initials={initials} color="blue" size="sm" /><i className="profile-online" /></button>
+      <button className="profile-trigger" aria-label="Open profile menu" onClick={() => setProfileOpen((open) => !open)}>{profile ? <UserAvatar profile={profile} token={token} size="sm" /> : <Avatar initials={initials} color="blue" size="sm" />}<i className="profile-online" /></button>
     </div>
-    {profileOpen && <div className="profile-menu"><div className="profile-menu-user"><Avatar initials={initials} color="blue" /><div><strong>{currentUserName}</strong><span>Available</span></div></div><button onClick={() => onToast('Profile settings are coming soon.')}><Icon name="info" size={16} /> Profile & preferences</button><button onClick={() => { setProfileOpen(false); onSignOut(); }}><Icon name="logout" size={16} /> Sign out</button></div>}
+    {profileOpen && <div className="profile-menu"><div className="profile-menu-user">{profile ? <UserAvatar profile={profile} token={token} /> : <Avatar initials={initials} color="blue" />}<div><strong>{currentUserName}</strong><span>Available</span></div></div><button onClick={() => { setProfileOpen(false); onOpenProfile(); }}><Icon name="info" size={16} /> Profile & preferences</button><button onClick={() => { setProfileOpen(false); onSignOut(); }}><Icon name="logout" size={16} /> Sign out</button></div>}
   </aside>;
 }

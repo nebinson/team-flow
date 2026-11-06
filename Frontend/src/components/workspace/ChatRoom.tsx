@@ -4,14 +4,17 @@ import React, { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useRe
 import type { Conversation, Message } from '../../types';
 import { Avatar } from '../Avatar';
 import { Icon } from '../Icon';
+import { messagingApi } from '../../api/messaging';
 
 type Props = {
   conversation: Conversation;
   messages: Message[];
+  accessToken: string;
   detailsOpen: boolean;
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: (event?: FormEvent) => void;
+  onUploadAttachment: (file: File) => Promise<void>;
   onCall: (kind: 'audio' | 'video') => void;
   onToggleDetails: () => void;
   onToast: (message: string) => void;
@@ -21,12 +24,22 @@ type Props = {
   onTyping: (typing: boolean) => void;
 };
 
-export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftChange, onSend, onCall, onToggleDetails, onToast, onBackToList, onShowCalls, typingName, onTyping }: Props) {
+export function ChatRoom({ conversation, messages, accessToken, detailsOpen, draft, onDraftChange, onSend, onUploadAttachment, onCall, onToggleDetails, onToast, onBackToList, onShowCalls, typingName, onTyping }: Props) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const chatBodyRef = useRef<HTMLDivElement | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const discardRecordingRef = useRef(false);
+  const recordingRequestRef = useRef(false);
+  const mountedRef = useRef(true);
+  const recordingStartedAtRef = useRef(0);
   const cursorRef = useRef({ start: 0, end: 0 });
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [uploadingName, setUploadingName] = useState('');
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   useEffect(() => {
     const chatBody = chatBodyRef.current;
@@ -56,6 +69,94 @@ export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftCh
       document.removeEventListener('keydown', onPickerKeyDown);
     };
   }, [emojiPickerOpen]);
+
+  useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(() => {
+      const seconds = Math.floor((Date.now() - recordingStartedAtRef.current) / 1000);
+      setRecordingSeconds(seconds);
+      if (seconds >= 120 && recorderRef.current?.state !== 'inactive') recorderRef.current?.stop();
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [recording]);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+    discardRecordingRef.current = true;
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    recorder?.stream.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  async function uploadFile(file: File) {
+    setUploadingName(file.name);
+    try {
+      await onUploadAttachment(file);
+    } catch (uploadError) {
+      onToast(uploadError instanceof Error ? uploadError.message : 'Could not upload that attachment.');
+    } finally {
+      setUploadingName('');
+    }
+  }
+
+  async function toggleVoiceRecording() {
+    const currentRecorder = recorderRef.current;
+    if (currentRecorder && currentRecorder.state !== 'inactive') {
+      currentRecorder.stop();
+      setRecording(false);
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      onToast('Voice recording is not supported by this browser.');
+      return;
+    }
+    if (recordingRequestRef.current) return;
+    recordingRequestRef.current = true;
+    let stream: MediaStream | undefined;
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = mediaStream;
+      if (!mountedRef.current) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      const supportedType = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4']
+        .find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(mediaStream, supportedType ? { mimeType: supportedType } : undefined);
+      recordingChunksRef.current = [];
+      recorderRef.current = recorder;
+      discardRecordingRef.current = false;
+      recorder.ondataavailable = (event) => { if (event.data.size) recordingChunksRef.current.push(event.data); };
+      recorder.onerror = () => {
+        discardRecordingRef.current = true;
+        mediaStream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        onToast('Voice recording failed. Please try again.');
+      };
+      recorder.onstop = () => {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        if (discardRecordingRef.current) {
+          recordingChunksRef.current = [];
+          return;
+        }
+        setRecording(false);
+        const mimeType = recorder.mimeType || recordingChunksRef.current[0]?.type || 'audio/webm';
+        const extension = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'm4a' : 'webm';
+        const voiceFile = new File(recordingChunksRef.current, `voice-message.${extension}`, { type: mimeType.split(';')[0] });
+        recordingChunksRef.current = [];
+        if (voiceFile.size) void uploadFile(voiceFile);
+      };
+      recordingStartedAtRef.current = Date.now();
+      setRecordingSeconds(0);
+      recorder.start();
+      setRecording(true);
+    } catch (recordError) {
+      stream?.getTracks().forEach((track) => track.stop());
+      if (mountedRef.current) onToast(recordError instanceof Error ? recordError.message : 'Could not access the microphone.');
+    } finally {
+      recordingRequestRef.current = false;
+    }
+  }
 
   function addEmoji(emoji: string) {
     const { start, end } = cursorRef.current;
@@ -96,11 +197,14 @@ export function ChatRoom({ conversation, messages, detailsOpen, draft, onDraftCh
       <div className="chat-actions"><button className="icon-button header-action mobile-call-history" aria-label="Call history" onClick={onShowCalls}><Icon name="phoneIncoming" /></button><button className="icon-button header-action" aria-label="Start voice call" onClick={() => onCall('audio')}><Icon name="phone" /></button><button className="icon-button header-action" aria-label="Start video call" onClick={() => onCall('video')}><Icon name="video" /></button><span className="action-divider" /><button className={`icon-button header-action ${detailsOpen ? 'action-active' : ''}`} aria-label="Conversation details" onClick={onToggleDetails}><Icon name="info" /></button></div>
     </header>
     <div ref={chatBodyRef} className="chat-body">
-      {messages.map((message, index) => <MessageRow key={message.id} message={message} previous={messages[index - 1]} />)}
+      {messages.map((message, index) => <MessageRow key={message.id} message={message} previous={messages[index - 1]} token={accessToken} />)}
       {typingName && <div className="typing-indicator"><span className="typing-dots"><i /><i /><i /></span><span>{typingName} is typing</span></div>}
     </div>
     <form className="composer" onSubmit={send}>
-      <div className="composer-input-row"><textarea ref={composerRef} value={draft} onSelect={(event) => { cursorRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }} onChange={(event) => { cursorRef.current = { start: event.target.selectionStart, end: event.target.selectionEnd }; onDraftChange(event.target.value); onTyping(Boolean(event.target.value.trim())); event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onKeyDown} placeholder="Write a message…" rows={1} aria-label="Write a message" /><div className="composer-tools"><button type="button" className="icon-button composer-tool" aria-label="Attach a file" onClick={() => onToast('File sharing will be available soon.')}><Icon name="paperclip" size={18} /></button><div className="emoji-picker-anchor" ref={emojiPickerRef}><button type="button" className={`icon-button composer-tool${emojiPickerOpen ? ' composer-tool-active' : ''}`} aria-label="Choose emoji" aria-expanded={emojiPickerOpen} aria-haspopup="dialog" onClick={() => { const textarea = composerRef.current; if (textarea) cursorRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd }; setEmojiPickerOpen((open) => !open); }}><Icon name="smile" size={18} /></button>{emojiPickerOpen && <div className="emoji-picker" role="dialog" aria-label="Choose an emoji">{emojiSections.map((section) => <section className="emoji-picker-section" key={section.label}><h3>{section.label}</h3><div className="emoji-picker-grid">{section.emojis.map((emoji) => <button type="button" key={emoji} aria-label={`Insert ${emoji}`} onMouseDown={(event) => event.preventDefault()} onClick={() => addEmoji(emoji)}>{emoji}</button>)}</div></section>)}</div>}</div><button type="button" className="icon-button composer-tool" aria-label="Voice message" onClick={() => onToast('Voice messages are coming soon.')}><Icon name="mic" size={18} /></button><button type="submit" className={`send-button ${draft.trim() ? 'send-ready' : ''}`} aria-label="Send message"><Icon name="send" size={17} /></button></div></div>
+      {uploadingName && <div className="composer-attachment-status">Uploading {uploadingName}…</div>}
+      {recording && <div className="composer-attachment-status recording-status"><i /> Recording voice message · {formatRecordingTime(recordingSeconds)} (2 min max)</div>}
+      <input ref={fileInputRef} className="file-picker-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp,.pdf,.txt,.csv,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); event.currentTarget.value = ''; }} />
+      <div className="composer-input-row"><textarea ref={composerRef} value={draft} onSelect={(event) => { cursorRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }} onChange={(event) => { cursorRef.current = { start: event.target.selectionStart, end: event.target.selectionEnd }; onDraftChange(event.target.value); onTyping(Boolean(event.target.value.trim())); event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={onKeyDown} placeholder="Write a message…" rows={1} aria-label="Write a message" /><div className="composer-tools"><button type="button" className="icon-button composer-tool" aria-label="Attach an image or document" title="Attach an image or document" disabled={Boolean(uploadingName) || recording} onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={18} /></button><div className="emoji-picker-anchor" ref={emojiPickerRef}><button type="button" className={`icon-button composer-tool${emojiPickerOpen ? ' composer-tool-active' : ''}`} aria-label="Choose emoji" aria-expanded={emojiPickerOpen} aria-haspopup="dialog" onClick={() => { const textarea = composerRef.current; if (textarea) cursorRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd }; setEmojiPickerOpen((open) => !open); }}><Icon name="smile" size={18} /></button>{emojiPickerOpen && <div className="emoji-picker" role="dialog" aria-label="Choose an emoji">{emojiSections.map((section) => <section className="emoji-picker-section" key={section.label}><h3>{section.label}</h3><div className="emoji-picker-grid">{section.emojis.map((emoji) => <button type="button" key={emoji} aria-label={`Insert ${emoji}`} onMouseDown={(event) => event.preventDefault()} onClick={() => addEmoji(emoji)}>{emoji}</button>)}</div></section>)}</div>}</div><button type="button" className={`icon-button composer-tool${recording ? ' recording-control' : ''}`} aria-label={recording ? 'Stop voice recording' : 'Record a voice message'} title={recording ? 'Stop and send voice message' : 'Record a voice message'} disabled={Boolean(uploadingName)} onClick={() => void toggleVoiceRecording()}><Icon name="mic" size={18} /></button><button type="submit" className={`send-button ${draft.trim() ? 'send-ready' : ''}`} aria-label="Send message"><Icon name="send" size={17} /></button></div></div>
     </form>
   </main>;
 }
@@ -111,17 +215,80 @@ const emojiSections = [
   { label: 'Hearts & symbols', emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '💕', '💖', '💯', '✨', '🔥', '🎉', '✅', '⭐', '💡', '🚀', '🎯', '☕', '🌈', '💐', '🥳'] },
 ];
 
-function MessageRow({ message, previous }: { message: Message; previous?: Message }) {
+function MessageRow({ message, previous, token }: { message: Message; previous?: Message; token: string }) {
   const showSender = !message.own && (!previous || previous.sender !== message.sender);
   const color = 'mint';
+  const isAttachmentPlaceholder = ['Sent an image', 'Sent a document', 'Voice message'].includes(message.text);
   return <div className={`message-row ${message.own ? 'message-own' : ''}`}>
     {!message.own && <div className="message-avatar-slot">{showSender && <Avatar initials={message.sender.slice(0, 2).toUpperCase()} color={color} size="sm" />}</div>}
     <div className="message-content">
       {showSender && <div className="message-meta"><strong>{message.sender}</strong><time>{message.time}</time></div>}
-      <div className={`message-bubble ${message.own ? 'bubble-own' : ''}`}><p>{message.text}</p>{message.own && <span className={`message-read ${message.read ? 'receipt-read' : ''}`} aria-label={message.read ? 'Read' : 'Sent'}><Icon name="check" size={13} />{message.read && <Icon name="check" size={13} />}</span>}</div>
+      <div className={`message-bubble ${message.own ? 'bubble-own' : ''}`}>{message.attachment ? <><MediaAttachment message={message} token={token} />{message.text && !isAttachmentPlaceholder && <p className="attachment-caption">{message.text}</p>}</> : <p>{message.text}</p>}{message.own && <span className={`message-read ${message.read ? 'receipt-read' : ''}`} aria-label={message.read ? 'Read' : 'Sent'}><Icon name="check" size={13} />{message.read && <Icon name="check" size={13} />}</span>}</div>
       {message.sentiment && <span className={`sentiment sentiment-${message.sentiment}`} aria-label={`Sentiment: ${message.sentiment}`}><i />{message.sentiment}</span>}
     </div>
   </div>;
+}
+
+function MediaAttachment({ message, token }: { message: Message; token: string }) {
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const [url, setUrl] = useState('');
+  const [error, setError] = useState(false);
+  const [nearViewport, setNearViewport] = useState(false);
+  const attachment = message.attachment;
+
+  useEffect(() => {
+    const preview = previewRef.current;
+    if (!preview) return;
+    if (!('IntersectionObserver' in window)) {
+      setNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setNearViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '240px' });
+    observer.observe(preview);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!attachment || !nearViewport) return;
+    let active = true;
+    let objectUrl = '';
+    setUrl('');
+    setError(false);
+    void messagingApi.downloadAttachment(token, String(message.id)).then((blob) => {
+      if (!active) return;
+      objectUrl = URL.createObjectURL(blob);
+      setUrl(objectUrl);
+    }).catch(() => { if (active) setError(true); });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment, message.id, nearViewport, token]);
+
+  if (!attachment) return null;
+  const size = formatFileSize(attachment.size);
+  return <div ref={previewRef} className="attachment-preview">
+    {error ? <div className="attachment-download-error">Could not load {attachment.file_name}</div> : !url ? <div className="attachment-loading">{nearViewport ? 'Loading attachment…' : `${attachment.file_name} · ${size}`}</div> : message.messageType === 'image'
+      ? <a className="image-attachment" href={url} target="_blank" rel="noreferrer"><img src={url} alt={attachment.file_name} /><span>{attachment.file_name} · {size}</span></a>
+      : message.messageType === 'voice'
+        ? <div className="voice-attachment"><audio controls preload="none" src={url} aria-label="Voice message" /><span>Voice message · {size}</span></div>
+        : <a className="document-attachment" href={url} download={attachment.file_name}><span className="document-attachment-icon"><Icon name="paperclip" size={18} /></span><span className="document-attachment-copy"><strong>{attachment.file_name}</strong><small>{size} · Download file</small></span><Icon name="arrow" size={16} /></a>}
+  </div>;
+}
+
+function formatFileSize(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatRecordingTime(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 function formatLastSeen(value?: string | null): string {

@@ -53,16 +53,24 @@ class CreateMessageRequest(BaseModel):
         return body
 
 
+class MessageAttachmentResponse(BaseModel):
+    file_name: str
+    content_type: str
+    size: int
+    download_url: str
+
+
 class MessageResponse(BaseModel):
     id: str
     conversation_id: str
     sender: UserSummary
     body: str
-    message_type: Literal["text"] = "text"
+    message_type: Literal["text", "image", "document", "voice"] = "text"
     created_at: datetime
     read: bool = False
     sentiment: Literal["positive", "neutral", "negative"] | None = None
     client_message_id: str | None = None
+    attachment: MessageAttachmentResponse | None = None
 
 
 class UserSearchResponse(BaseModel):

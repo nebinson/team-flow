@@ -5,11 +5,14 @@ codes are scoped to an email address, expire, and allow at most five attempts.
 """
 
 import hmac
+import uuid
 from datetime import timedelta
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from pwdlib.exceptions import UnknownHashError
 from pymongo import ReturnDocument
 from pymongo.database import Database
@@ -20,8 +23,12 @@ from app.models.documents import UserDocument
 from app.schemas.auth import (
     AccessTokenResponse,
     AuthMessage,
+    EmailChangeRequest,
+    EmailCodeRequest,
     IdentifierRequest,
     LoginRequest,
+    PasswordChangeRequest,
+    ProfileUpdateRequest,
     RefreshSessionRequest,
     RegisterRequest,
     UserResponse,
@@ -41,6 +48,7 @@ from app.services.email_verification import (
     email_verification_is_configured,
     send_verification_email,
 )
+from app.services import r2_storage
 from app.settings import settings
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -73,6 +81,8 @@ def _public_user(user: UserDocument) -> UserResponse:
     name_parts = full_name.split(maxsplit=1)
     first_name = user.get("first_name") or name_parts[0]
     last_name = user.get("last_name") or (name_parts[1] if len(name_parts) > 1 else "")
+    updated_at = user.get("updated_at", user["created_at"])
+    avatar_version = int(updated_at.timestamp() * 1000) if hasattr(updated_at, "timestamp") else 0
     return UserResponse(
         id=str(user["_id"]),
         name=f"{first_name} {last_name}".strip(),
@@ -82,6 +92,8 @@ def _public_user(user: UserDocument) -> UserResponse:
         email=user["email"],
         email_verified=user["email_verified"],
         created_at=user["created_at"],
+        gender=user.get("gender"),
+        avatar_url=f"/api/v1/auth/me/avatar?v={avatar_version}" if user.get("avatar_key") else None,
     )
 
 
@@ -345,3 +357,161 @@ def get_current_user(
 @router.get("/me", response_model=UserResponse)
 def read_current_user(user: dict = Depends(get_current_user)) -> UserResponse:
     return _public_user(user)
+    PasswordChangeRequest,
+    ProfileUpdateRequest,
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_profile(
+    payload: ProfileUpdateRequest,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> UserResponse:
+    changes = {
+        "first_name": payload.first_name,
+        "last_name": payload.last_name,
+        "name": f"{payload.first_name} {payload.last_name}",
+        "username": payload.username,
+        "updated_at": utc_now(),
+    }
+    try:
+        database.users.update_one({"_id": user["_id"]}, {"$set": changes})
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="That username is already taken.") from exc
+    return _public_user({**user, **changes})
+
+
+@router.post("/me/email-change", response_model=AuthMessage, status_code=status.HTTP_202_ACCEPTED)
+def request_email_change(
+    payload: EmailChangeRequest,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> AuthMessage:
+    _require_auth_configuration(email=True)
+    if payload.email == user["email"]:
+        raise HTTPException(status_code=400, detail="That is already your account email.")
+    if database.users.find_one({"email": payload.email, "_id": {"$ne": user["_id"]}}, {"_id": 1}):
+        raise HTTPException(status_code=409, detail="An account already uses that email.")
+    try:
+        sent = send_verification_email(
+            database,
+            user,
+            recipient_email=payload.email,
+            purpose="email_change",
+            pending_email=payload.email,
+        )
+    except EmailDeliveryError as exc:
+        raise HTTPException(status_code=502, detail="Could not send the verification email. Please try again.") from exc
+    if not sent:
+        pending = database.email_verifications.find_one({"user_id": user["_id"], "purpose": "email_change"}, {"pending_email": 1})
+        if pending and pending.get("pending_email") != payload.email:
+            raise HTTPException(status_code=429, detail="A verification code was recently sent to another address. Wait briefly before requesting a code for this one.")
+    return AuthMessage(message="A verification code was sent to the new email address." if sent else "A verification code was sent recently. Check your new email or try again shortly.")
+
+
+@router.post("/me/email-change/verify", response_model=UserResponse)
+def verify_email_change(
+    payload: EmailCodeRequest,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> UserResponse:
+    code_hash = hash_email_verification_code(payload.code)
+    verification = database.email_verifications.find_one_and_update(
+        {"user_id": user["_id"], "purpose": "email_change", "expires_at": {"$gt": utc_now()}, "attempt_count": {"$lt": 5}},
+        {"$inc": {"attempt_count": 1}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if verification is None or not hmac.compare_digest(code_hash, verification["code_hash"]):
+        raise HTTPException(status_code=400, detail="The code is invalid, expired, or the attempt limit was reached.")
+    new_email = verification.get("pending_email")
+    if not new_email:
+        raise HTTPException(status_code=400, detail="The email change request is invalid. Request a new code.")
+    try:
+        result = database.users.update_one(
+            {"_id": user["_id"], "email": user["email"]},
+            {"$set": {"email": new_email, "email_verified": True, "updated_at": utc_now()}},
+        )
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="An account already uses that email.") from exc
+    database.email_verifications.delete_one({"_id": verification["_id"]})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=409, detail="Your account email changed in another session. Reload your profile.")
+    return _public_user({**user, "email": new_email, "email_verified": True})
+
+
+@router.post("/me/password", response_model=AuthMessage)
+def change_password(
+    payload: PasswordChangeRequest,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> AuthMessage:
+    try:
+        matches = verify_password(payload.current_password, user.get("password_hash", ""))
+    except (UnknownHashError, ValueError):
+        matches = False
+    if not matches:
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    database.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": hash_password(payload.new_password), "updated_at": utc_now()}})
+    database.refresh_tokens.delete_many({"user_id": user["_id"], "token_hash": {"$ne": hash_refresh_token(payload.current_refresh_token)}})
+    return AuthMessage(message="Password updated. Other signed-in devices were signed out.")
+
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> UserResponse:
+    if not r2_storage.is_configured():
+        raise HTTPException(status_code=503, detail="Cloudflare R2 is not configured.")
+    image_types = {"image/jpeg": ("jpg", lambda data: data.startswith(b"\xff\xd8\xff")), "image/png": ("png", lambda data: data.startswith(b"\x89PNG\r\n\x1a\n")), "image/webp": ("webp", lambda data: len(data) > 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"), "image/gif": ("gif", lambda data: data.startswith((b"GIF87a", b"GIF89a")))}
+    if file.content_type not in image_types:
+        raise HTTPException(status_code=415, detail="Choose a JPEG, PNG, WebP, or GIF profile picture.")
+    data = await file.read(settings.r2_max_upload_bytes + 1)
+    if not data or len(data) > min(settings.r2_max_upload_bytes, 5 * 1024 * 1024):
+        raise HTTPException(status_code=413, detail="Profile pictures must be smaller than 5 MB.")
+    extension, validate = image_types[file.content_type]
+    if not validate(data):
+        raise HTTPException(status_code=415, detail="The selected file does not match its image type.")
+    key = f"users/{user['_id']}/profile/{uuid.uuid4().hex}.{extension}"
+    try:
+        await run_in_threadpool(r2_storage.put_object, key, data, file.content_type)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Could not upload the profile picture.") from exc
+    old_key = user.get("avatar_key")
+    updated_at = utc_now()
+    database.users.update_one({"_id": user["_id"]}, {"$set": {"avatar_key": key, "updated_at": updated_at}})
+    if old_key:
+        try:
+            await run_in_threadpool(r2_storage.delete_object, old_key)
+        except Exception:
+            pass
+    return _public_user({**user, "avatar_key": key, "updated_at": updated_at})
+
+
+@router.delete("/me/avatar", response_model=UserResponse)
+async def delete_avatar(
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> UserResponse:
+    old_key = user.get("avatar_key")
+    updated_at = utc_now()
+    database.users.update_one({"_id": user["_id"]}, {"$unset": {"avatar_key": ""}, "$set": {"updated_at": updated_at}})
+    if old_key:
+        try:
+            await run_in_threadpool(r2_storage.delete_object, old_key)
+        except Exception:
+            pass
+    return _public_user({**user, "avatar_key": None, "updated_at": updated_at})
+
+
+@router.get("/me/avatar")
+async def read_avatar(user: dict = Depends(get_current_user)):
+    key = user.get("avatar_key")
+    if not key:
+        raise HTTPException(status_code=404, detail="No profile picture is set.")
+    try:
+        result = await run_in_threadpool(r2_storage.get_object, key)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Profile picture not found.") from exc
+    return StreamingResponse(result["Body"], media_type=result.get("ContentType", "application/octet-stream"), headers={"Cache-Control": "private, max-age=300"})

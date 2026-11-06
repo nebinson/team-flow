@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     verification_resend_cooldown_seconds: int = 60
     resend_api_key: str = ""
     email_from: str = ""
+    r2_endpoint_url: str = ""
+    r2_region: str = "auto"
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = ""
+    r2_max_upload_bytes: int = 26214400
     nim_api_key: str = ""
     nim_base_url: str = "https://integrate.api.nvidia.com/v1"
     nim_model: str = ""

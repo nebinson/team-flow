@@ -1,6 +1,6 @@
 /** Typed REST/WebSocket client plus API-to-workspace view-model adapters. */
 
-import { apiBaseUrl, apiRequest } from './http';
+import { apiBaseUrl, apiBlob, apiRequest } from './http';
 import type { Conversation, Message } from '../types';
 
 export type UserSummary = {
@@ -18,11 +18,17 @@ export type ApiMessage = {
   conversation_id: string;
   sender: UserSummary;
   body: string;
-  message_type: 'text';
+  message_type: 'text' | 'image' | 'document' | 'voice';
   created_at: string;
   read: boolean;
   sentiment: 'positive' | 'neutral' | 'negative' | null;
   client_message_id?: string | null;
+  attachment?: {
+    file_name: string;
+    content_type: string;
+    size: number;
+    download_url: string;
+  } | null;
 };
 
 export type ApiConversation = {
@@ -74,6 +80,8 @@ export function messageFromApi(message: ApiMessage, currentUserId: string): Mess
   return {
     id: message.id,
     clientId: message.client_message_id ?? undefined,
+    messageType: message.message_type ?? 'text',
+    attachment: message.attachment ?? undefined,
     sender: message.sender.id === currentUserId ? 'You' : message.sender.name,
     text: message.body,
     time: formatTime(message.created_at),
@@ -90,6 +98,14 @@ export const messagingApi = {
     apiRequest<ApiMessage[]>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {}, token),
   sendMessage: (token: string, conversationId: string, body: string, clientMessageId: string) =>
     apiRequest<ApiMessage>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', body: JSON.stringify({ body, client_message_id: clientMessageId }) }, token),
+  uploadAttachment: (token: string, conversationId: string, file: File, clientMessageId: string) => {
+    const data = new FormData();
+    data.append('file', file);
+    data.append('client_message_id', clientMessageId);
+    return apiRequest<ApiMessage>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/attachments`, { method: 'POST', body: data }, token);
+  },
+  downloadAttachment: (token: string, messageId: string) =>
+    apiBlob(`/api/v1/messages/${encodeURIComponent(messageId)}/attachment`, token),
   markRead: (token: string, conversationId: string) =>
     apiRequest<void>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/read`, { method: 'POST' }, token),
   searchUsers: (token: string, query: string) =>

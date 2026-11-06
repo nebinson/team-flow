@@ -91,3 +91,43 @@ class UserResponse(BaseModel):
     email: EmailStr
     email_verified: bool
     created_at: datetime
+    gender: str | None = None
+    avatar_url: str | None = None
+
+
+class ProfileUpdateRequest(BaseModel):
+    first_name: str = Field(min_length=1, max_length=50)
+    last_name: str = Field(min_length=1, max_length=50)
+    username: str = Field(min_length=3, max_length=24, pattern=r"^[a-z0-9_]+$")
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def normalize_name_part(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Name fields cannot be blank.")
+        return normalized
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        return str(value).strip().casefold().removeprefix("@")
+
+
+class EmailChangeRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).strip().casefold()
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+    current_refresh_token: str = Field(min_length=40, max_length=256)
+
+
+class EmailCodeRequest(BaseModel):
+    code: str = Field(pattern=r"^[0-9]{6}$")

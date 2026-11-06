@@ -14,10 +14,14 @@ import { SidebarRail } from './SidebarRail';
 import { Icon } from '../Icon';
 import type { ApiCallLog, CallKind } from '../../api/calls';
 import type { ActiveCall } from '../../hooks/useWebRtcCall';
+import type { UserProfile } from '../../api/auth';
+import { ProfilePage } from './ProfilePage';
 
 type Props = {
   theme: Theme;
   currentUserName: string;
+  userProfile: UserProfile | null;
+  onProfileUpdated: (profile: UserProfile) => void;
   accessToken: string;
   onCreateConversation: (username: string) => Promise<void>;
   onToggleTheme: () => void;
@@ -34,6 +38,7 @@ type Props = {
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: (event?: FormEvent) => void;
+  onUploadAttachment: (file: File, conversationId: string) => Promise<void>;
   onTyping: (typing: boolean) => void;
   typingName?: string;
   detailsOpen: boolean;
@@ -51,9 +56,9 @@ type Props = {
   onLoadCallLogs: () => void;
 };
 
-export function Workspace({ theme, currentUserName, accessToken, onCreateConversation, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, call, onCall, onAcceptCall, onRejectCall, onHangUp, onToggleMute, onToggleCamera, toast, callLogs, callLogsLoading, onLoadCallLogs }: Props) {
+export function Workspace({ theme, currentUserName, userProfile, onProfileUpdated, accessToken, onCreateConversation, onUploadAttachment, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, call, onCall, onAcceptCall, onRejectCall, onHangUp, onToggleMute, onToggleCamera, toast, callLogs, callLogsLoading, onLoadCallLogs }: Props) {
   const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('list');
-  const [activeView, setActiveView] = useState<'messages' | 'calls' | 'ai'>('messages');
+  const [activeView, setActiveView] = useState<'messages' | 'calls' | 'ai' | 'profile'>('messages');
   const conversation = conversations.find((item) => item.id === activeId);
   const messages = conversation ? messagesByConversation[conversation.id] ?? conversation.messages : [];
   const [newConversationOpen, setNewConversationOpen] = useState(false);
@@ -89,10 +94,10 @@ export function Workspace({ theme, currentUserName, accessToken, onCreateConvers
   }, [activeId, activeView, call, detailsOpen, newConversationOpen, onDraftChange, onSelectConversation, onToggleDetails, onTyping]);
 
   return <div className={`app-shell mobile-${mobilePanel}-active${activeView === 'calls' ? ' calls-view-active' : ''}`}>
-    <SidebarRail theme={theme} currentUserName={currentUserName} activeView={activeView === 'calls' ? 'calls' : 'messages'} onViewChange={(view) => { setActiveView(view); if (view === 'calls') onLoadCallLogs(); }} onToggleTheme={onToggleTheme} onToast={onToast} onSignOut={onSignOut} />
-    {activeView === 'calls' ? <CallLogsPanel logs={callLogs} loading={callLogsLoading} onCall={onCall} onShowMessages={() => setActiveView('messages')} /> : <>
+    <SidebarRail theme={theme} currentUserName={currentUserName} profile={userProfile} token={accessToken} activeView={activeView === 'calls' ? 'calls' : 'messages'} onViewChange={(view) => { setActiveView(view); if (view === 'calls') onLoadCallLogs(); }} onOpenProfile={() => setActiveView('profile')} onToggleTheme={onToggleTheme} onToast={onToast} onSignOut={onSignOut} />
+    {activeView === 'profile' && userProfile ? <ProfilePage profile={userProfile} token={accessToken} onProfileUpdated={onProfileUpdated} onToast={onToast} /> : activeView === 'calls' ? <CallLogsPanel logs={callLogs} loading={callLogsLoading} onCall={onCall} onShowMessages={() => setActiveView('messages')} /> : <>
       <ConversationList conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelect={selectConversation} query={query} onQueryChange={onQueryChange} filter={filter} onFilterChange={onFilterChange} onToast={onToast} onNewConversation={startConversation} onShowCalls={() => { setActiveView('calls'); onLoadCallLogs(); }} aiSelected={activeView === 'ai'} onOpenAiChat={() => { setActiveView('ai'); setMobilePanel('chat'); }} />
-      {activeView === 'ai' ? <AiChatRoom token={accessToken} onToast={onToast} /> : conversation ? <ChatRoom conversation={conversation} messages={messages} detailsOpen={detailsOpen} draft={draft} onDraftChange={onDraftChange} onTyping={onTyping} typingName={typingName} onSend={onSend} onCall={(kind) => onCall(conversation.id, kind)} onToggleDetails={onToggleDetails} onToast={onToast} onBackToList={() => setMobilePanel('list')} onShowCalls={() => { setActiveView('calls'); onLoadCallLogs(); }} /> : <EmptyConversation onNewConversation={startConversation} />}
+      {activeView === 'ai' ? <AiChatRoom token={accessToken} onToast={onToast} /> : conversation ? <ChatRoom conversation={conversation} messages={messages} accessToken={accessToken} detailsOpen={detailsOpen} draft={draft} onDraftChange={onDraftChange} onTyping={onTyping} typingName={typingName} onSend={onSend} onUploadAttachment={(file) => onUploadAttachment(file, conversation.id)} onCall={(kind) => onCall(conversation.id, kind)} onToggleDetails={onToggleDetails} onToast={onToast} onBackToList={() => setMobilePanel('list')} onShowCalls={() => { setActiveView('calls'); onLoadCallLogs(); }} /> : <EmptyConversation onNewConversation={startConversation} />}
       {activeView === 'messages' && detailsOpen && conversation && <DetailsPanel key={conversation.id} conversation={conversation} token={accessToken} onClose={onToggleDetails} onCall={(kind) => onCall(conversation.id, kind)} onToast={onToast} />}
     </>}
     {call && <CallOverlay call={call} onAccept={onAcceptCall} onReject={onRejectCall} onHangUp={onHangUp} onToggleMute={onToggleMute} onToggleCamera={onToggleCamera} />}

@@ -59,7 +59,7 @@ async function renewAccessToken(): Promise<string | null> {
 
 async function sendRequest(path: string, init: RequestInit, token?: string): Promise<Response> {
   const headers = new Headers(init.headers);
-  if (init.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (init.body !== undefined && !headers.has('Content-Type') && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
   return fetch(`${apiBaseUrl}${path}`, { ...init, headers });
 }
@@ -84,4 +84,23 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, token?
     throw new ApiRequestError(message, response.status, detail?.code, detail?.email_hint);
   }
   return payload as T;
+}
+
+export async function apiBlob(path: string, token: string): Promise<Blob> {
+  let response = await sendRequest(path, {}, token);
+  if (response.status === 401) {
+    const renewedToken = await renewAccessToken();
+    if (renewedToken) response = await sendRequest(path, {}, renewedToken);
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.detail;
+    const message = typeof detail === 'string'
+      ? detail
+      : typeof detail?.message === 'string'
+        ? detail.message
+        : 'TeamFlow could not download that attachment. Please try again.';
+    throw new ApiRequestError(message, response.status, detail?.code, detail?.email_hint);
+  }
+  return response.blob();
 }
