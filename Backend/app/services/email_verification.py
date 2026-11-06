@@ -69,20 +69,29 @@ def send_verification_email(
         return False
 
     name = escape(user["name"])
+    if purpose == "email_change":
+        subject = "Verify your new TeamFlow email"
+        instruction = "Enter this code to confirm this new email address for your TeamFlow account:"
+        footer = "If you did not request this change, you can ignore this email. Your current email will remain unchanged."
+    else:
+        subject = "Your TeamFlow verification code"
+        instruction = "Enter this code to verify your email and activate your TeamFlow account:"
+        footer = "If you did not create a TeamFlow account, you can ignore this email."
+    html = (
+        f"<p>Hi {name},</p>"
+        f"<p>{instruction}</p>"
+        f'<p style="font-size:30px;font-weight:700;letter-spacing:8px">{code}</p>'
+        f"<p>This code expires in {settings.email_verification_code_minutes} minutes.</p>"
+        f"<p>{footer}</p>"
+    )
     resend.api_key = settings.resend_api_key
     try:
         resend.Emails.send(
             {
                 "from": settings.email_from,
                 "to": [recipient_email or user["email"]],
-                "subject": "Verify your new TeamFlow email" if purpose == "email_change" else "Your TeamFlow verification code",
-                "html": (
-                    f"<p>Hi {name},</p>"
-                    ("<p>Enter this code to confirm this new email address for your TeamFlow account:</p>" if purpose == "email_change" else "<p>Enter this code to verify your email and activate your TeamFlow account:</p>")
-                    f'<p style="font-size:30px;font-weight:700;letter-spacing:8px">{code}</p>'
-                    f"<p>This code expires in {settings.email_verification_code_minutes} minutes.</p>"
-                    "<p>If you did not create a TeamFlow account, you can ignore this email.</p>"
-                ),
+                "subject": subject,
+                "html": html,
             }
         )
     except Exception as exc:
