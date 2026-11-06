@@ -18,9 +18,10 @@ type Props = {
   onShowCalls: () => void;
   aiSelected: boolean;
   onOpenAiChat: () => void;
+  onOpenPeople: () => void;
 };
 
-export function ConversationList({ conversations, messagesByConversation, activeId, onSelect, query, onQueryChange, filter, onFilterChange, onToast, onNewConversation, onShowCalls, aiSelected, onOpenAiChat }: Props) {
+export function ConversationList({ conversations, messagesByConversation, activeId, onSelect, query, onQueryChange, filter, onFilterChange, onToast, onNewConversation, onShowCalls, aiSelected, onOpenAiChat, onOpenPeople }: Props) {
   const visible = conversations.filter((item) => {
     const lastMessage = (messagesByConversation[item.id] ?? item.messages).at(-1);
     const matchesQuery = `${item.name} ${item.lastMessage ?? lastMessage?.text ?? ''}`.toLowerCase().includes(query.toLowerCase());
@@ -28,7 +29,7 @@ export function ConversationList({ conversations, messagesByConversation, active
   });
 
   return <aside className="conversation-sidebar">
-    <div className="sidebar-heading"><div><span className="workspace-label">YOUR WORKSPACE</span><h1>Messages <span className="heading-caret"><Icon name="chevron" size={15} /></span></h1></div><div className="sidebar-heading-actions"><button className="icon-button create-button mobile-call-history" aria-label="Call history" onClick={onShowCalls}><Icon name="phoneIncoming" size={17} /></button><button className="icon-button create-button" aria-label="Start a new conversation" onClick={onNewConversation}><Icon name="plus" size={18} /></button></div></div>
+    <div className="sidebar-heading"><div><span className="workspace-label">YOUR WORKSPACE</span><h1>Messages <span className="heading-caret"><Icon name="chevron" size={15} /></span></h1></div><div className="sidebar-heading-actions"><button className="icon-button people-mobile-nav" aria-label="People" onClick={onOpenPeople}><Icon name="users" size={17} /></button><button className="icon-button create-button mobile-call-history" aria-label="Call history" onClick={onShowCalls}><Icon name="phoneIncoming" size={17} /></button><button className="icon-button create-button" aria-label="Start a new conversation" onClick={onNewConversation}><Icon name="plus" size={18} /></button></div></div>
     <label className="search-box"><Icon name="search" size={17} /><input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search messages" /><kbd>⌘ K</kbd></label>
     <div className="filter-tabs"><button className={filter === 'all' ? 'filter-active' : ''} onClick={() => onFilterChange('all')}>All</button><button className={filter === 'unread' ? 'filter-active' : ''} onClick={() => onFilterChange('unread')}>Unread</button><button className="filter-more" aria-label="More filters" onClick={() => onToast('More filters will be available soon.')}><Icon name="more" size={18} /></button></div>
     <div className="conversation-list">

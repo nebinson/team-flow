@@ -69,6 +69,24 @@ class UserSearchResponse(BaseModel):
     users: list[UserSummary]
 
 
+class PersonEntry(BaseModel):
+    user: UserSummary
+    relationship: Literal["none", "incoming", "outgoing", "friends"]
+
+
+class PeopleResponse(BaseModel):
+    people: list[PersonEntry]
+
+
+class FriendRequestsResponse(BaseModel):
+    incoming: list[UserSummary]
+    outgoing: list[UserSummary]
+
+
+class FriendRequestResponse(BaseModel):
+    relationship: Literal["outgoing", "friends"]
+
+
 class CallLogResponse(BaseModel):
     id: str
     conversation_id: str

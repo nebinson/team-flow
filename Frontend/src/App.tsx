@@ -346,9 +346,13 @@ function playNotificationSound() {
         });
       } else if (type === 'conversation_changed') {
         void refreshConversations();
+      } else if (type === 'friend_request_changed') {
+        window.dispatchEvent(new Event('teamflow:people-changed'));
       } else if (type === 'presence') {
         const userId = String(event.user_id ?? '');
-        setConversations((current) => current.map((item) => item.participantId === userId ? { ...item, online: Boolean(event.online), lastSeenAt: typeof event.last_seen_at === 'string' ? event.last_seen_at : null } : item));
+        const presence = { userId, online: Boolean(event.online), lastSeenAt: typeof event.last_seen_at === 'string' ? event.last_seen_at : null };
+        setConversations((current) => current.map((item) => item.participantId === userId ? { ...item, online: presence.online, lastSeenAt: presence.lastSeenAt } : item));
+        window.dispatchEvent(new CustomEvent('teamflow:presence-changed', { detail: presence }));
       } else if (type === 'message') {
         const incoming = event.message as ApiMessage;
         if (!incoming?.id || !incoming.conversation_id) return;
