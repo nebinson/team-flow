@@ -25,6 +25,7 @@ type Props = {
   onProfileUpdated: (profile: UserProfile) => void;
   accessToken: string;
   onCreateConversation: (username: string) => Promise<void>;
+  onCreateGroupConversation: (userIds: string[]) => Promise<void>;
   onToggleTheme: () => void;
   onSignOut: () => void;
   onToast: (message: string) => void;
@@ -57,7 +58,7 @@ type Props = {
   onLoadCallLogs: () => void;
 };
 
-export function Workspace({ theme, currentUserName, userProfile, onProfileUpdated, accessToken, onCreateConversation, onUploadAttachment, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, call, onCall, onAcceptCall, onRejectCall, onHangUp, onToggleMute, onToggleCamera, toast, callLogs, callLogsLoading, onLoadCallLogs }: Props) {
+export function Workspace({ theme, currentUserName, userProfile, onProfileUpdated, accessToken, onCreateConversation, onCreateGroupConversation, onUploadAttachment, onToggleTheme, onSignOut, onToast, conversations, messagesByConversation, activeId, onSelectConversation, query, onQueryChange, filter, onFilterChange, draft, onDraftChange, onSend, onTyping, typingName, detailsOpen, onToggleDetails, call, onCall, onAcceptCall, onRejectCall, onHangUp, onToggleMute, onToggleCamera, toast, callLogs, callLogsLoading, onLoadCallLogs }: Props) {
   const [mobilePanel, setMobilePanel] = useState<'list' | 'chat'>('list');
   const [activeView, setActiveView] = useState<'messages' | 'calls' | 'ai' | 'people' | 'profile'>('messages');
   const conversation = conversations.find((item) => item.id === activeId);
@@ -103,7 +104,7 @@ export function Workspace({ theme, currentUserName, userProfile, onProfileUpdate
       {activeView === 'messages' && detailsOpen && conversation && <DetailsPanel key={conversation.id} conversation={conversation} token={accessToken} onClose={onToggleDetails} onCall={(kind) => onCall(conversation.id, kind)} onToast={onToast} />}
     </>}
     {call && <CallOverlay call={call} onAccept={onAcceptCall} onReject={onRejectCall} onHangUp={onHangUp} onToggleMute={onToggleMute} onToggleCamera={onToggleCamera} />}
-    {newConversationOpen && accessToken && <NewConversationDialog token={accessToken} onClose={() => setNewConversationOpen(false)} onCreate={createConversation} />}
+    {newConversationOpen && accessToken && <NewConversationDialog token={accessToken} onClose={() => setNewConversationOpen(false)} onCreate={createConversation} onCreateGroup={async (ids) => { await onCreateGroupConversation(ids); setActiveView("messages"); setMobilePanel("chat"); }} />}
     <Toast message={toast} />
   </div>;
 }

@@ -44,6 +44,7 @@ export type ApiMessage = {
 export type ApiConversation = {
   id: string;
   type: 'direct' | 'group';
+  name?: string | null;
   participants: UserSummary[];
   last_message: { body: string; sender: UserSummary; created_at: string } | null;
   created_at: string;
@@ -67,7 +68,8 @@ function colorForId(id: string): string {
 
 export function conversationFromApi(conversation: ApiConversation, currentUserId: string): Conversation {
   const other = conversation.participants.find((person) => person.id !== currentUserId) ?? conversation.participants[0];
-  const name = conversation.type === 'group' ? 'Group conversation' : other?.name ?? 'New conversation';
+  const groupNames = conversation.participants.filter((person) => person.id !== currentUserId).map((person) => person.first_name);
+  const name = conversation.type === 'group' ? (conversation.name || groupNames.join(', ') || 'Group conversation') : other?.name ?? 'New conversation';
   const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'TC';
   const preview = conversation.last_message;
   return {
@@ -132,6 +134,8 @@ export const messagingApi = {
     apiRequest<void>(`/api/v1/people/requests/${encodeURIComponent(userId)}`, { method: 'DELETE' }, token),
   createDirectConversation: (token: string, username: string) =>
     apiRequest<ApiConversation>('/api/v1/conversations/direct', { method: 'POST', body: JSON.stringify({ username }) }, token),
+  createGroupConversation: (token: string, participantIds: string[], name?: string) =>
+    apiRequest<ApiConversation>('/api/v1/conversations/group', { method: 'POST', body: JSON.stringify({ participant_ids: participantIds, name }) }, token),
   connectWorkspace(token: string, onEvent: (event: Record<string, unknown>) => void) {
     // A relative API base (for example VITE_API_URL=/ behind an Nginx proxy)
     // means the REST API and WebSocket share the page's origin.

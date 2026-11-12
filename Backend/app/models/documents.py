@@ -25,7 +25,9 @@ class ConversationDocument(TypedDict):
     _id: NotRequired[ObjectId]
     type: str
     participant_ids: list[ObjectId]
-    direct_key: str
+    direct_key: NotRequired[str]
+    name: NotRequired[str | None]
+    created_by: NotRequired[ObjectId]
     created_at: datetime
     updated_at: datetime
     last_message: dict | None

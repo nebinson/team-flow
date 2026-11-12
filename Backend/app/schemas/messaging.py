@@ -25,6 +25,7 @@ class LastMessageSummary(BaseModel):
 class ConversationResponse(BaseModel):
     id: str
     type: Literal["direct", "group"]
+    name: str | None = None
     participants: list[UserSummary]
     last_message: LastMessageSummary | None = None
     created_at: datetime
@@ -38,6 +39,19 @@ class DirectConversationRequest(BaseModel):
     @classmethod
     def normalize_username(cls, value: str) -> str:
         return str(value).strip().casefold().removeprefix("@")
+
+
+class GroupConversationRequest(BaseModel):
+    participant_ids: list[str] = Field(min_length=2, max_length=49)
+    name: str | None = Field(default=None, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def trim_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        name = value.strip()
+        return name or None
 
 
 class CreateMessageRequest(BaseModel):

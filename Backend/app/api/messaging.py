@@ -30,6 +30,7 @@ from app.schemas.messaging import (
     CreateMessageRequest,
     DirectConversationRequest,
     FriendRequestResponse,
+    GroupConversationRequest,
     FriendRequestsResponse,
     LastMessageSummary,
     MessageAttachmentResponse,
@@ -254,6 +255,7 @@ def _serialize_conversations(
             ConversationResponse(
                 id=str(conversation["_id"]),
                 type=conversation["type"],
+                name=conversation.get("name"),
                 participants=[
                     users[user_id]
                     for user_id in conversation["participant_ids"]
@@ -555,6 +557,38 @@ def create_direct_conversation(
         [str(participant_id) for participant_id in conversation["participant_ids"]],
         {"type": "conversation_changed"},
     )
+    return _serialize_conversations(database, [conversation])[0]
+
+
+@router.post("/conversations/group", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
+def create_group_conversation(
+    payload: GroupConversationRequest,
+    user: dict = Depends(get_current_user),
+    database: Database = Depends(get_database),
+) -> ConversationResponse:
+    """Create a group thread with the current user and accepted teammates."""
+    try:
+        requested_ids = [ObjectId(value) for value in payload.participant_ids]
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="A selected teammate is invalid.") from exc
+    if len(set(requested_ids)) != len(requested_ids) or user["_id"] in requested_ids:
+        raise HTTPException(status_code=400, detail="Select each teammate once.")
+    users = list(database.users.find({"_id": {"$in": requested_ids}, "email_verified": True}))
+    if len(users) != len(requested_ids):
+        raise HTTPException(status_code=400, detail="One or more selected teammates are unavailable.")
+    for member_id in requested_ids:
+        if _relationship(database, user["_id"], member_id) != "friends":
+            raise HTTPException(status_code=403, detail="Group chats are available with accepted teammates only.")
+    participant_ids = sorted([user["_id"], *requested_ids], key=str)
+    now = utc_now()
+    conversation = {
+        "type": "group", "participant_ids": participant_ids,
+        "name": payload.name, "created_by": user["_id"],
+        "created_at": now, "updated_at": now, "last_message": None,
+    }
+    result = database.conversations.insert_one(conversation)
+    conversation["_id"] = result.inserted_id
+    connections.publish([str(member_id) for member_id in participant_ids], {"type": "conversation_changed"})
     return _serialize_conversations(database, [conversation])[0]
 
 

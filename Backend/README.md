@@ -10,7 +10,7 @@ For calls, set `CLOUDFLARE_TURN_KEY_ID` to the TURN key UID and `CLOUDFLARE_TURN
 
 - users: normalized unique email and username, first/last name, gender preference, Argon2 password hash, verification state, last-seen time, and timestamps. Username uniqueness is partial so existing accounts without usernames remain readable.
 - email_verifications: one HMAC-hashed, six-digit code per unverified user, with expiry, resend timestamp, and a five-attempt limit. MongoDB TTL removes expired records.
-- conversations: one-to-one participant IDs, a deterministic unique direct-chat key, per-member read timestamps, activity time, and a last-message preview.
+- conversations: participant IDs, a deterministic unique direct-chat key for one-to-one threads, optional group name, per-member read timestamps, activity time, and a last-message preview.
 - messages: conversation ID, sender ID, text body, type, and creation time.
 - call_logs: call ID, conversation and participants, caller/callee, audio/video type, outcome, and start/connect/end timestamps. Call signaling writes status transitions so the Calls tab can show history and connected-call duration.
 - refresh_tokens: SHA-256 hashes of rotating refresh tokens, user ID, and timestamps. Raw refresh tokens are returned only at sign-in/rotation and are not persisted in MongoDB.
@@ -45,6 +45,7 @@ All endpoints require `Authorization: Bearer <access_token>`:
 - `GET /api/v1/people/requests` — list incoming and outgoing friend requests.
 - `POST /api/v1/people/requests/{user_id}` — send a request; `POST /api/v1/people/requests/{user_id}/accept` accepts one; `DELETE` cancels or declines a pending request.
 - `POST /api/v1/conversations/direct` with `{ "username" }` — create or reopen a one-to-one thread; new threads require an accepted friend request.
+- `POST /api/v1/conversations/group` with `{ "participant_ids": ["...", "..."], "name": "optional" }` — create a group thread with 2–49 accepted teammates plus the creator.
 - `GET /api/v1/conversations` — list threads for the signed-in user, newest activity first.
 - `GET /api/v1/conversations/{id}/messages?limit=50&before=...` — load a history page; limit is 1–100.
 - `POST /api/v1/conversations/{id}/messages` with `{ "body" }` — persist and return a text message (up to 4,000 characters).

@@ -366,6 +366,15 @@ function playNotificationSound() {
     setActiveId(conversation.id);
   }
 
+  async function createGroupConversation(participantIds: string[]) {
+    if (!accessToken) throw new Error('Sign in to create a group.');
+    const response = await messagingApi.createGroupConversation(accessToken, participantIds);
+    const conversation = conversationFromApi(response, currentUserId);
+    setConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)]);
+    setMessagesByConversation((current) => ({ ...current, [conversation.id]: [] }));
+    setActiveId(conversation.id);
+  }
+
   useEffect(() => {
     if (screen !== 'workspace' || !accessToken || !currentUserId || !activeId) return;
     let active = true;
@@ -493,5 +502,5 @@ function playNotificationSound() {
     </>;
   }
 
-  return <Workspace theme={theme} currentUserName={displayName} userProfile={userProfile} accessToken={accessToken} onProfileUpdated={(profile) => { setUserProfile(profile); setDisplayName(profile.name); }} onCreateConversation={createConversation} onUploadAttachment={uploadAttachment} onToggleTheme={toggleTheme} onSignOut={() => { callController.hangUp(); const refreshToken = getRefreshToken(); if (refreshToken) void authApi.logout(refreshToken).catch(() => undefined); clearRefreshToken(); setAccessToken(''); setCurrentUserId(''); setUserProfile(null); setConversations([]); setMessagesByConversation({}); setCallLogs([]); setActiveId(''); setScreen('login'); }} onToast={notify} conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={(id) => { setActiveId(id); setConversations((current) => current.map((item) => item.id === id ? { ...item, unread: 0 } : item)); }} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onTyping={(typing) => updateTyping(typing)} typingName={typingByConversation[activeId]} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} call={callController.call} onCall={(conversationId, kind) => void callController.startCall(conversationId, kind)} onAcceptCall={() => void callController.acceptCall()} onRejectCall={callController.rejectCall} onHangUp={callController.hangUp} onToggleMute={callController.toggleMute} onToggleCamera={callController.toggleCamera} toast={toast} callLogs={callLogs} callLogsLoading={callLogsLoading} onLoadCallLogs={() => void loadCallLogs()} />;
+  return <Workspace theme={theme} currentUserName={displayName} userProfile={userProfile} accessToken={accessToken} onProfileUpdated={(profile) => { setUserProfile(profile); setDisplayName(profile.name); }} onCreateConversation={createConversation} onCreateGroupConversation={createGroupConversation} onUploadAttachment={uploadAttachment} onToggleTheme={toggleTheme} onSignOut={() => { callController.hangUp(); const refreshToken = getRefreshToken(); if (refreshToken) void authApi.logout(refreshToken).catch(() => undefined); clearRefreshToken(); setAccessToken(''); setCurrentUserId(''); setUserProfile(null); setConversations([]); setMessagesByConversation({}); setCallLogs([]); setActiveId(''); setScreen('login'); }} onToast={notify} conversations={conversations} messagesByConversation={messagesByConversation} activeId={activeId} onSelectConversation={(id) => { setActiveId(id); setConversations((current) => current.map((item) => item.id === id ? { ...item, unread: 0 } : item)); }} query={query} onQueryChange={setQuery} filter={filter} onFilterChange={setFilter} draft={draft} onDraftChange={setDraft} onTyping={(typing) => updateTyping(typing)} typingName={typingByConversation[activeId]} onSend={sendMessage} detailsOpen={showDetails} onToggleDetails={() => setShowDetails((open) => !open)} call={callController.call} onCall={(conversationId, kind) => void callController.startCall(conversationId, kind)} onAcceptCall={() => void callController.acceptCall()} onRejectCall={callController.rejectCall} onHangUp={callController.hangUp} onToggleMute={callController.toggleMute} onToggleCamera={callController.toggleCamera} toast={toast} callLogs={callLogs} callLogsLoading={callLogsLoading} onLoadCallLogs={() => void loadCallLogs()} />;
 }
